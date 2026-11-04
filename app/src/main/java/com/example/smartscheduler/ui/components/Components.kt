@@ -1,0 +1,590 @@
+package com.example.smartscheduler.ui.components
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import com.example.smartscheduler.data.local.entity.RoutineTemplateTaskEntity
+import com.example.smartscheduler.data.local.entity.ScheduleTaskEntity
+import com.example.smartscheduler.domain.model.Recurrence
+import com.example.smartscheduler.domain.model.TaskKind
+import com.example.smartscheduler.ui.theme.AppTheme
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
+
+// ============================================================================
+// Draft model + mapping helpers
+// ============================================================================
+
+/** ข้อมูลที่ผู้ใช้กรอกใน dialog (เวลาเก็บเป็น "นาทีนับจากเที่ยงคืน") */
+data class TaskDraft(
+    val title: String = "",
+    val kind: TaskKind = TaskKind.TASK,
+    val startMin: Int = 9 * 60,
+    val endMin: Int = 10 * 60,
+    val reminder: Boolean = true
+)
+
+/** ช่วงเวลาแบบย่อ ใช้วาดเส้นเวลา/แถบวัน */
+data class TimeBlock(val startMin: Int, val endMin: Int, val kind: TaskKind)
+
+fun fmt(minutes: Int): String = "%02d:%02d".format((minutes / 60) % 24, minutes % 60)
+
+fun rangeText(start: Int, end: Int) = "${fmt(start)}–${fmt(end)}"
+
+fun durationText(minutes: Int): String {
+    val h = minutes / 60
+    val m = minutes % 60
+    return when {
+        h > 0 && m > 0 -> "$h ชม. $m นาที"
+        h > 0 -> "$h ชม."
+        else -> "$m นาที"
+    }
+}
+
+fun thaiShortDate(d: LocalDate) = "${d.dayOfMonth} ${Recurrence.monthLabelsTh[d.monthValue - 1]} ${d.year + 543}"
+
+val ScheduleTaskEntity.startMin get() = startHour * 60 + startMinute
+val ScheduleTaskEntity.endMin get() = startMin + durationMinutes
+val RoutineTemplateTaskEntity.startMin get() = startHour * 60 + startMinute
+val RoutineTemplateTaskEntity.endMin get() = startMin + durationMinutes
+
+fun ScheduleTaskEntity.toDraft() = TaskDraft(title, TaskKind.from(kind), startMin, endMin, reminderEnabled)
+fun RoutineTemplateTaskEntity.toDraft() = TaskDraft(title, TaskKind.from(kind), startMin, endMin, reminderEnabled)
+
+fun TaskDraft.toScheduleTask(base: ScheduleTaskEntity?, dayId: Long): ScheduleTaskEntity =
+    (base ?: ScheduleTaskEntity(dayId = dayId, title = "", startHour = 0, startMinute = 0)).copy(
+        title = title.trim(),
+        startHour = startMin / 60,
+        startMinute = startMin % 60,
+        durationMinutes = endMin - startMin,
+        reminderEnabled = reminder,
+        kind = kind.code
+    )
+
+fun TaskDraft.toTemplateTask(base: RoutineTemplateTaskEntity?, templateId: Long): RoutineTemplateTaskEntity =
+    (base ?: RoutineTemplateTaskEntity(templateId = templateId, title = "", startHour = 0, startMinute = 0)).copy(
+        title = title.trim(),
+        startHour = startMin / 60,
+        startMinute = startMin % 60,
+        durationMinutes = endMin - startMin,
+        reminderEnabled = reminder,
+        kind = kind.code
+    )
+
+fun defaultDraft(kind: TaskKind, start: Int = 9 * 60) = TaskDraft(
+    title = when (kind) {
+        TaskKind.WORK -> "ช่วงทำงาน"
+        TaskKind.BREAK -> "พักเบรก"
+        TaskKind.TASK -> ""
+        TaskKind.CLASS -> "เรียน"
+    },
+    kind = kind,
+    startMin = start,
+    endMin = start + if (kind == TaskKind.BREAK) 15 else 60
+)
+
+@Composable
+fun TaskKind.color(): Color = when (this) {
+    TaskKind.WORK -> AppTheme.colors.work
+    TaskKind.BREAK -> AppTheme.colors.rest
+    TaskKind.TASK -> AppTheme.colors.task
+    TaskKind.CLASS -> AppTheme.colors.study
+}
+
+@Composable
+fun TaskKind.bg(): Color = when (this) {
+    TaskKind.WORK -> AppTheme.colors.workBg
+    TaskKind.BREAK -> AppTheme.colors.restBg
+    TaskKind.TASK -> AppTheme.colors.taskBg
+    TaskKind.CLASS -> AppTheme.colors.studyBg
+}
+
+fun TaskKind.icon(): ImageVector = when (this) {
+    TaskKind.WORK -> Icons.Filled.Work
+    TaskKind.BREAK -> Icons.Filled.Coffee
+    TaskKind.TASK -> Icons.Filled.Checklist
+    TaskKind.CLASS -> Icons.Filled.School
+}
+
+// ============================================================================
+// Surfaces
+// ============================================================================
+
+/** พื้นขาวมุมโค้ง ไม่มีเงา ใช้จัดกลุ่มเนื้อหา */
+@Composable
+fun Panel(
+    modifier: Modifier = Modifier,
+    padding: PaddingValues = PaddingValues(20.dp),
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.large)
+            .background(AppTheme.colors.surface)
+            .padding(padding),
+        content = content
+    )
+}
+
+@Composable
+fun SectionTitle(text: String, modifier: Modifier = Modifier, trailing: (@Composable () -> Unit)? = null) {
+    Row(modifier.fillMaxWidth().padding(top = 18.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(text, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        trailing?.invoke()
+    }
+}
+
+@Composable
+fun Hint(text: String, modifier: Modifier = Modifier) {
+    Text(text, style = MaterialTheme.typography.bodySmall, color = AppTheme.colors.muted, modifier = modifier)
+}
+
+/** ปุ่มหลักสีหมึก เต็มความกว้าง */
+@Composable
+fun InkButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.fillMaxWidth().height(52.dp),
+        shape = MaterialTheme.shapes.medium,
+        colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.ink, contentColor = AppTheme.colors.ground)
+    ) { Text(text, style = MaterialTheme.typography.labelLarge) }
+}
+
+/** ตัวเลือก 2 ทางแบบแถบ (เช่น ไทย / สหรัฐฯ) */
+@Composable
+fun SegmentedToggle(options: List<String>, selectedIndex: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(4.dp)
+    ) {
+        options.forEachIndexed { i, label ->
+            val on = i == selectedIndex
+            Box(
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(if (on) AppTheme.colors.surface else Color.Transparent)
+                    .clickable { onSelect(i) }
+                    .padding(vertical = 10.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (on) AppTheme.colors.ink else AppTheme.colors.muted
+                )
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Repeat pickers: grid of toggle cells (7 days / 12 months)
+// ============================================================================
+
+@Composable
+private fun ToggleCell(label: String, on: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val c = AppTheme.colors
+    Box(
+        modifier
+            .height(44.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (on) c.ink else Color.Transparent)
+            .border(1.dp, if (on) c.ink else c.line, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (on) c.ground else c.muted
+        )
+    }
+}
+
+@Composable
+private fun QuickPicks(items: List<Pair<String, () -> Unit>>) {
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        items.forEach { (label, action) ->
+            TextButton(onClick = action, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                Text(label, style = MaterialTheme.typography.labelMedium, color = AppTheme.colors.work)
+            }
+        }
+    }
+}
+
+@Composable
+fun DayOfWeekPicker(selected: Set<String>, onChange: (Set<String>) -> Unit) {
+    Column {
+        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            Recurrence.dayCodes.forEach { code ->
+                ToggleCell(
+                    label = Recurrence.dayLabelsTh.getValue(code).trimEnd('.'),
+                    on = code in selected,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    val next = if (code in selected) selected - code else selected + code
+                    if (next.isNotEmpty()) onChange(next)
+                }
+            }
+        }
+        QuickPicks(
+            listOf(
+                "จันทร์–ศุกร์" to { onChange(Recurrence.weekdays) },
+                "ทุกวัน" to { onChange(Recurrence.allDays) },
+                "เสาร์–อาทิตย์" to { onChange(Recurrence.weekend) }
+            )
+        )
+    }
+}
+
+@Composable
+fun MonthPicker(selected: Set<Int>, onChange: (Set<Int>) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        for (row in 0..1) {
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                for (col in 1..6) {
+                    val month = row * 6 + col
+                    ToggleCell(
+                        label = Recurrence.monthLabelsTh[month - 1],
+                        on = month in selected,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        val next = if (month in selected) selected - month else selected + month
+                        if (next.isNotEmpty()) onChange(next)
+                    }
+                }
+            }
+        }
+        QuickPicks(
+            listOf(
+                "ทุกเดือน" to { onChange(Recurrence.allMonths) },
+                "ม.ค.–มิ.ย." to { onChange((1..6).toSet()) },
+                "ก.ค.–ธ.ค." to { onChange((7..12).toSet()) }
+            )
+        )
+    }
+}
+
+// ============================================================================
+// Day strip (horizontal overview of one day) + legend
+// ============================================================================
+
+@Composable
+fun DayStrip(blocks: List<TimeBlock>, modifier: Modifier = Modifier, fromMin: Int = 6 * 60, toMin: Int = 18 * 60) {
+    val span = (toMin - fromMin).toFloat()
+    Column(modifier) {
+        BoxWithConstraints(
+            Modifier
+                .fillMaxWidth()
+                .height(30.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            blocks.forEach { b ->
+                val s = b.startMin.coerceIn(fromMin, toMin)
+                val e = b.endMin.coerceIn(fromMin, toMin)
+                if (e > s) {
+                    Box(
+                        Modifier
+                            .offset(x = maxWidth * ((s - fromMin) / span))
+                            .width(maxWidth * ((e - s) / span))
+                            .fillMaxHeight()
+                            .background(b.kind.color())
+                    )
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+            Hint(fmt(fromMin))
+            Spacer(Modifier.weight(1f))
+            Hint(fmt((fromMin + toMin) / 2))
+            Spacer(Modifier.weight(1f))
+            Hint(fmt(toMin))
+        }
+    }
+}
+
+@Composable
+fun KindTotals(blocks: List<TimeBlock>, modifier: Modifier = Modifier) {
+    val work = blocks.filter { it.kind == TaskKind.WORK }.sumOf { it.endMin - it.startMin }
+    val rest = blocks.filter { it.kind == TaskKind.BREAK }.sumOf { it.endMin - it.startMin }
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+        LegendItem(TaskKind.WORK.color(), "ทำงาน ${durationText(work)}")
+        LegendItem(TaskKind.BREAK.color(), "พัก ${durationText(rest)}")
+    }
+}
+
+@Composable
+private fun LegendItem(color: Color, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(color))
+        Spacer(Modifier.width(6.dp))
+        Text(text, style = MaterialTheme.typography.bodySmall, color = AppTheme.colors.muted)
+    }
+}
+
+// ============================================================================
+// List row (routine / batch)
+// ============================================================================
+
+@Composable
+fun TimeRow(
+    title: String,
+    kind: TaskKind,
+    startMin: Int,
+    endMin: Int,
+    reminder: Boolean,
+    showDivider: Boolean,
+    subtitle: String? = null,
+    onClick: () -> Unit
+) {
+    Column {
+        if (showDivider) HorizontalDivider(color = AppTheme.colors.line)
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .height(IntrinsicSize.Min)
+                .padding(vertical = 15.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(Modifier.width(4.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(kind.color()))
+            Spacer(Modifier.width(14.dp))
+            Text(rangeText(startMin, endMin), style = MaterialTheme.typography.titleSmall, modifier = Modifier.width(110.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 2)
+                Hint(subtitle ?: durationText(endMin - startMin))
+            }
+            if (!reminder) {
+                Icon(
+                    Icons.Filled.NotificationsOff, contentDescription = "ไม่แจ้งเตือน",
+                    modifier = Modifier.size(16.dp), tint = AppTheme.colors.muted
+                )
+            }
+        }
+    }
+}
+
+/** ปุ่มเพิ่มแต่ละประเภทใต้รายการ (2 แถว แถวละ 2 ปุ่ม) */
+@Composable
+fun AddKindButtons(onAdd: (TaskKind) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(top = 14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        TaskKind.values().toList().chunked(2).forEach { pair ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                pair.forEach { k ->
+                    Row(
+                        Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(k.bg())
+                            .clickable { onAdd(k) },
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = null, tint = k.color(), modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(k.label, style = MaterialTheme.typography.labelLarge, color = AppTheme.colors.ink)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Time / date pickers
+// ============================================================================
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TimePickerDialog(title: String, initialMinutes: Int, onConfirm: (Int) -> Unit, onDismiss: () -> Unit) {
+    val state = rememberTimePickerState(
+        initialHour = (initialMinutes / 60) % 24,
+        initialMinute = initialMinutes % 60,
+        is24Hour = true
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = AppTheme.colors.surface,
+        title = { Text(title) },
+        text = { Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { TimePicker(state = state) } },
+        confirmButton = { TextButton(onClick = { onConfirm(state.hour * 60 + state.minute) }) { Text("ตกลง") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ยกเลิก") } }
+    )
+}
+
+/** ปุ่มแสดงเวลา กดแล้วเปิดตัวเลือกเวลา */
+@Composable
+fun TimeButton(label: String, minutes: Int, modifier: Modifier = Modifier, onPick: (Int) -> Unit) {
+    var show by remember { mutableStateOf(false) }
+    Column(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .border(1.dp, AppTheme.colors.line, RoundedCornerShape(12.dp))
+            .clickable { show = true }
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+    ) {
+        Hint(label)
+        Text(fmt(minutes), style = MaterialTheme.typography.titleLarge)
+    }
+    if (show) {
+        TimePickerDialog(label, minutes, onConfirm = { onPick(it); show = false }, onDismiss = { show = false })
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DatePickerDialogHost(initial: LocalDate, onPick: (LocalDate) -> Unit, onDismiss: () -> Unit) {
+    val state = rememberDatePickerState(
+        initialSelectedDateMillis = initial.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+    )
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = {
+                state.selectedDateMillis?.let { onPick(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()) }
+            }) { Text("ตกลง") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ยกเลิก") } }
+    ) { DatePicker(state = state) }
+}
+
+@Composable
+fun DateButton(label: String, date: LocalDate, modifier: Modifier = Modifier, onPick: (LocalDate) -> Unit) {
+    var show by remember { mutableStateOf(false) }
+    Column(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(AppTheme.colors.surface)
+            .border(1.dp, AppTheme.colors.line, RoundedCornerShape(12.dp))
+            .clickable { show = true }
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+    ) {
+        Hint(label)
+        Text(thaiShortDate(date), style = MaterialTheme.typography.titleSmall)
+    }
+    if (show) DatePickerDialogHost(date, onPick = { onPick(it); show = false }, onDismiss = { show = false })
+}
+
+// ============================================================================
+// Task editor dialog
+// ============================================================================
+
+@Composable
+fun TaskEditorDialog(
+    title: String,
+    initial: TaskDraft?,
+    footnote: String? = null,
+    onSave: (TaskDraft) -> Unit,
+    onDelete: (() -> Unit)? = null,
+    onDismiss: () -> Unit
+) {
+    var draft by remember { mutableStateOf(initial ?: TaskDraft()) }
+    val timeOk = draft.endMin > draft.startMin && draft.endMin <= 24 * 60
+    val valid = draft.title.isNotBlank() && timeOk
+    val kinds = TaskKind.values().toList()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = AppTheme.colors.surface,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                SegmentedToggle(
+                    options = kinds.map { it.label },
+                    selectedIndex = kinds.indexOf(draft.kind),
+                    onSelect = { draft = draft.copy(kind = kinds[it]) }
+                )
+                OutlinedTextField(
+                    value = draft.title,
+                    onValueChange = { draft = draft.copy(title = it) },
+                    label = { Text("ชื่อ") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TimeButton("เริ่ม", draft.startMin, Modifier.weight(1f)) { s ->
+                        val keep = (draft.endMin - draft.startMin).takeIf { it > 0 } ?: 60
+                        draft = draft.copy(startMin = s, endMin = minOf(s + keep, 24 * 60))
+                    }
+                    TimeButton("สิ้นสุด", draft.endMin, Modifier.weight(1f)) { e -> draft = draft.copy(endMin = e) }
+                }
+                if (timeOk) {
+                    Hint("ยาว ${durationText(draft.endMin - draft.startMin)}")
+                } else {
+                    Text("เวลาสิ้นสุดต้องอยู่หลังเวลาเริ่ม", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("แจ้งเตือนตอนเริ่ม", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                    Switch(checked = draft.reminder, onCheckedChange = { draft = draft.copy(reminder = it) })
+                }
+                if (footnote != null) Hint(footnote)
+            }
+        },
+        confirmButton = { TextButton(enabled = valid, onClick = { onSave(draft) }) { Text("บันทึก") } },
+        dismissButton = {
+            Row {
+                if (onDelete != null) {
+                    TextButton(onClick = onDelete) { Text("ลบ", color = MaterialTheme.colorScheme.error) }
+                }
+                TextButton(onClick = onDismiss) { Text("ยกเลิก") }
+            }
+        }
+    )
+}
+
+// ============================================================================
+// Empty state
+// ============================================================================
+
+@Composable
+fun EmptyState(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null
+) {
+    Column(
+        modifier.fillMaxWidth().padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Box(
+            Modifier.size(64.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center
+        ) { Icon(icon, contentDescription = null, modifier = Modifier.size(30.dp), tint = AppTheme.colors.muted) }
+        Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+        Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = AppTheme.colors.muted, textAlign = TextAlign.Center)
+        if (actionLabel != null && onAction != null) {
+            Spacer(Modifier.height(4.dp))
+            OutlinedButton(onClick = onAction) { Text(actionLabel) }
+        }
+    }
+}
