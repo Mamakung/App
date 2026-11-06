@@ -21,6 +21,7 @@ import com.example.smartscheduler.R
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
+import androidx.core.graphics.ColorUtils
 
 /**
  * สีเฉพาะของแอป (นอกเหนือจาก Material colorScheme)
@@ -104,13 +105,51 @@ object TaskPalette {
         Swatch("amber", "เหลือง", Color(0xFF8A6500) to Color(0xFFFAF2D9), Color(0xFFF2C94C) to Color(0xFF3A2E0B)),
         Swatch("green", "เขียว", Color(0xFF2C7A4B) to Color(0xFFE3F3E8), Color(0xFF6FD39A) to Color(0xFF14392A)),
         Swatch("teal", "เขียวน้ำทะเล", Color(0xFF0E7470) to Color(0xFFDCF1EF), Color(0xFF5FD3CC) to Color(0xFF103734)),
+        Swatch("sky", "ฟ้า", Color(0xFF1F6FA8) to Color(0xFFE1EEF8), Color(0xFF7CC4F5) to Color(0xFF12304A)),
         Swatch("blue", "น้ำเงิน", Color(0xFF2B44C4) to Color(0xFFE6E9FA), Color(0xFF8FA0FF) to Color(0xFF1F2856)),
         Swatch("violet", "ม่วง", Color(0xFF6741C0) to Color(0xFFEEE8FB), Color(0xFFB9A0FF) to Color(0xFF2A1F4D)),
         Swatch("pink", "ชมพู", Color(0xFFB02D6B) to Color(0xFFFBE7F0), Color(0xFFFF8FC0) to Color(0xFF3D1529)),
+        Swatch("brown", "น้ำตาล", Color(0xFF7A5230) to Color(0xFFF2E9E1), Color(0xFFD9A97A) to Color(0xFF3A2A1C)),
         Swatch("gray", "เทา", Color(0xFF56625E) to Color(0xFFECEFEE), Color(0xFFB5C0BC) to Color(0xFF29322F))
     )
 
     fun find(key: String?): Swatch? = key?.let { k -> swatches.firstOrNull { it.key == k } }
+
+    // ---------- สีที่เลือกเองจากแถบสี เก็บเป็น "h<องศา>" เช่น "h210" ----------
+
+    fun hueKey(hue: Int): String = "h${hue.coerceIn(0, 359)}"
+    fun hueOf(key: String?): Int? = key?.takeIf { it.startsWith("h") }?.drop(1)?.toIntOrNull()?.coerceIn(0, 359)
+
+    private val white = android.graphics.Color.WHITE
+    private val darkSurface = 0xFF19231F.toInt()
+
+    /**
+     * คู่สี (เข้ม, อ่อน) ของสีที่เลือก หรือ null ถ้าไม่ได้เลือก
+     * สีจากแถบสี: ปรับความสว่างเองจนตัดกับพื้น ≥ 4.5:1 (สีเหลือง/เขียวอ่อนจึงออกมาเข้มขึ้นในโหมดสว่าง)
+     */
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, Pair<Color, Color>>()
+
+    fun resolve(key: String?, dark: Boolean): Pair<Color, Color>? {
+        find(key)?.let { return if (dark) it.dark else it.light }
+        val hue = hueOf(key) ?: return null
+        return cache.getOrPut("$hue-$dark") { computeHue(hue.toFloat(), dark) }
+    }
+
+    private fun computeHue(hue: Float, dark: Boolean): Pair<Color, Color> =
+        if (dark) {
+            var l = 0.62f
+            while (l < 0.9f && ColorUtils.calculateContrast(hsl(hue, 0.75f, l), darkSurface) < 4.5) l += 0.02f
+            Color(hsl(hue, 0.75f, l)) to Color(hsl(hue, 0.45f, 0.17f))
+        } else {
+            var l = 0.45f
+            while (l > 0.15f && ColorUtils.calculateContrast(hsl(hue, 0.65f, l), white) < 4.5) l -= 0.02f
+            Color(hsl(hue, 0.65f, l)) to Color(hsl(hue, 0.7f, 0.93f))
+        }
+
+    /** สีสดเต็มที่ของแต่ละองศา ใช้วาดแถบสี */
+    fun pure(hue: Float): Color = Color(hsl(hue, 0.85f, 0.55f))
+
+    private fun hsl(h: Float, s: Float, l: Float): Int = ColorUtils.HSLToColor(floatArrayOf(h, s, l))
 }
 
 val LocalAppColors = staticCompositionLocalOf { LightApp }

@@ -9,6 +9,18 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.horizontalDrag
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.stateDescription
+import kotlin.math.roundToInt
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.example.smartscheduler.ui.theme.TaskPalette
@@ -149,12 +161,12 @@ fun TaskKind.bg(): Color = when (this) {
 /** สีหลักของกิจกรรม: สีที่ผู้ใช้เลือก ถ้าไม่ได้เลือกใช้สีตามประเภท */
 @Composable
 fun taskAccent(kind: TaskKind, color: String?): Color =
-    TaskPalette.find(color)?.let { if (AppTheme.colors.dark) it.dark.first else it.light.first } ?: kind.color()
+    TaskPalette.resolve(color, AppTheme.colors.dark)?.first ?: kind.color()
 
 /** สีพื้นอ่อนของกิจกรรม คู่กับ [taskAccent] */
 @Composable
 fun taskFill(kind: TaskKind, color: String?): Color =
-    TaskPalette.find(color)?.let { if (AppTheme.colors.dark) it.dark.second else it.light.second } ?: kind.bg()
+    TaskPalette.resolve(color, AppTheme.colors.dark)?.second ?: kind.bg()
 
 @Composable
 fun ScheduleTaskEntity.accent(): Color = taskAccent(TaskKind.from(kind), color)
@@ -710,6 +722,81 @@ fun ColorPicker(kind: TaskKind, selected: String?, onSelect: (String?) -> Unit) 
                     }
                 }
             }
+        }
+    }
+    Hint("หรือลากเลือกสีเองจากแถบ แอปปรับความเข้มให้อ่านง่าย")
+    HueBar(
+        hue = TaskPalette.hueOf(selected),
+        dark = dark,
+        onChange = { onSelect(TaskPalette.hueKey(it)) }
+    )
+}
+
+/**
+ * แถบสีรุ้ง แตะหรือลากเพื่อเลือกสี (0–359 องศา)
+ * สูง 48dp ให้กดง่าย ตัวเลื่อนแสดงสีจริงที่จะใช้ โปรแกรมอ่านหน้าจอปรับค่าได้
+ */
+@Composable
+private fun HueBar(hue: Int?, dark: Boolean, onChange: (Int) -> Unit) {
+    val c = AppTheme.colors
+    var widthPx by remember { mutableStateOf(1) }
+    val density = LocalDensity.current
+    val thumb = 32.dp
+    val thumbPx = with(density) { thumb.toPx() }
+    val rainbow = remember { Brush.horizontalGradient((0..12).map { TaskPalette.pure(it * 30f) }) }
+    val latest by rememberUpdatedState(onChange)
+
+    fun hueAt(x: Float): Int {
+        val usable = (widthPx - thumbPx).coerceAtLeast(1f)
+        return (((x - thumbPx / 2) / usable).coerceIn(0f, 1f) * 359).roundToInt()
+    }
+
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .onSizeChanged { widthPx = it.width }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    latest(hueAt(down.position.x))
+                    horizontalDrag(down.id) { change ->
+                        latest(hueAt(change.position.x))
+                        change.consume()
+                    }
+                }
+            }
+            .semantics {
+                contentDescription = "แถบเลือกสี"
+                stateDescription = hue?.let { "เลือกไว้ $it องศา" } ?: "ยังไม่ได้เลือกจากแถบ"
+                progressBarRangeInfo = ProgressBarRangeInfo((hue ?: 0).toFloat(), 0f..359f)
+                setProgress { v -> latest(v.roundToInt().coerceIn(0, 359)); true }
+            },
+        contentAlignment = Alignment.CenterStart
+    ) {
+        Box(
+            Modifier
+                .padding(horizontal = thumb / 2)
+                .fillMaxWidth()
+                .height(24.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(rainbow)
+        )
+        if (hue != null) {
+            val usable = (widthPx - thumbPx).coerceAtLeast(0f)
+            val x = with(density) { (usable * hue / 359f).toDp() }
+            val chosen = TaskPalette.resolve(TaskPalette.hueKey(hue), dark)?.first ?: c.ink
+            Box(
+                Modifier
+                    .offset(x = x)
+                    .size(thumb)
+                    .clip(CircleShape)
+                    .background(c.surface)
+                    .border(2.dp, c.ink, CircleShape)
+                    .padding(4.dp)
+                    .clip(CircleShape)
+                    .background(chosen)
+            )
         }
     }
 }
