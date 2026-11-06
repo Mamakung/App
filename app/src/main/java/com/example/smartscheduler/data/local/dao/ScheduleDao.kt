@@ -130,6 +130,20 @@ interface ScheduleDao {
     @Query("UPDATE schedule_tasks SET kind = :kind, categoryId = :categoryId, color = :color, icon = :icon WHERE originTemplateTaskId = :templateTaskId")
     suspend fun setTemplateCopiesStyle(templateTaskId: Long, kind: String, categoryId: Long?, color: String?, icon: String?)
 
+    /** กิจกรรมชุดเดียวกัน (เพิ่มพร้อมกันหลายวัน) ตั้งแต่วันที่ระบุ */
+    @Query(
+        """SELECT t.taskId, t.dayId, d.dateEpochDay FROM schedule_tasks t INNER JOIN schedule_days d ON d.dayId = t.dayId
+           WHERE d.ownerUid = :ownerUid AND t.seriesId = :seriesId AND d.dateEpochDay >= :fromEpochDay"""
+    )
+    suspend fun findSeries(ownerUid: String, seriesId: String, fromEpochDay: Long): List<TaskOnDate>
+
+    /** เปลี่ยนหน้าตาทั้งชุด (เพิ่มพร้อมกันหลายวัน) */
+    @Query(
+        """UPDATE schedule_tasks SET kind = :kind, categoryId = :categoryId, color = :color, icon = :icon
+           WHERE seriesId = :seriesId AND dayId IN (SELECT dayId FROM schedule_days WHERE ownerUid = :ownerUid)"""
+    )
+    suspend fun setSeriesStyle(ownerUid: String, seriesId: String, kind: String, categoryId: Long?, color: String?, icon: String?)
+
     @Query("DELETE FROM schedule_tasks WHERE taskId IN (:taskIds)")
     suspend fun deleteTasksByIds(taskIds: List<Long>)
 

@@ -24,7 +24,8 @@ private const val ALARM_SLOTS = 40
 enum class DeleteScope { THIS, FOLLOWING, ALL }
 
 /** รายการนี้ซ้ำหลายวันหรือไม่ (มาจากกิจวัตรหรือจากตารางที่นำเข้า) */
-val ScheduleTaskEntity.isRepeating: Boolean get() = importBatchId != null || originTemplateTaskId != null
+val ScheduleTaskEntity.isRepeating: Boolean
+    get() = importBatchId != null || originTemplateTaskId != null || seriesId != null
 
 /** วันทำซ้ำของรายการนี้ (ถ้าไม่ได้ตั้งเอง ใช้ค่าเริ่มต้นของกิจวัตร) */
 fun RoutineTemplateTaskEntity.effectiveDays(template: RoutineTemplateEntity): String = repeatDays ?: template.appliesToDaysOfWeek
@@ -162,7 +163,14 @@ class ScheduleRepository @Inject constructor(
         val from = if (scope == DeleteScope.FOLLOWING) maxOf(day.dateEpochDay, today) else today
         val batch = task.importBatchId
         val origin = task.originTemplateTaskId
+        val series = task.seriesId
         when {
+            series != null && batch == null && origin == null -> {
+                val hits = scheduleDao.findSeries(uid, series, from)
+                val withSelf = if (hits.any { it.taskId == task.taskId }) hits
+                else hits + TaskOnDate(task.taskId, task.dayId, day.dateEpochDay)
+                removeTasks(uid, withSelf, restoreRoutine = false)
+            }
             batch != null -> {
                 val weekday = LocalDate.ofEpochDay(day.dateEpochDay).dayOfWeek
                 val hits = scheduleDao.findImportedSeries(uid, batch, task.title, task.startHour, task.startMinute, from)
@@ -188,6 +196,9 @@ class ScheduleRepository @Inject constructor(
      * [series] = รายการก่อนแก้ (ใช้ชื่อเดิมหาคาบอื่น)  [style] = ค่าใหม่
      */
     suspend fun setSeriesStyle(uid: String, series: ScheduleTaskEntity, style: ScheduleTaskEntity) {
+        series.seriesId?.let {
+            scheduleDao.setSeriesStyle(uid, it, style.kind, style.categoryId, style.color, style.icon)
+        }
         series.importBatchId?.let {
             scheduleDao.setImportedStyle(uid, it, series.title, style.kind, style.categoryId, style.color, style.icon)
         }
@@ -459,6 +470,12 @@ class ScheduleRepository @Inject constructor(
         tasks: List<ScheduleTaskEntity>
     ): String {
         val batchId = UUID.randomUUID().toString()
+        // แต่ละกิจกรรมที่เพิ่มหลายวันเป็นหนึ่งชุด (ลบ/แก้สีทั้งชุดได้) ยกเว้นคาบจากตารางที่นำเข้า ซึ่งมีชุดของตัวเอง
+        val seriesTasks = tasks.mapIndexed { i, t ->
+            if (t.importBatchId == null && t.originTemplateTaskId == null && t.seriesId == null && dates.size > 1) {
+                t.copy(seriesId = "$batchId:$i")
+            } else t
+        }
         db.withTransaction {
             for (date in dates) {
                 ensureDayGenerated(uid, date)
@@ -476,7 +493,7 @@ class ScheduleRepository @Inject constructor(
                     scheduleDao.updateDay(day.copy(isCustomized = true, batchGroupId = batchId))
                 }
                 val dayId = day?.dayId ?: continue
-                scheduleDao.upsertTasks(tasks.map { it.copy(taskId = 0, dayId = dayId) })
+                scheduleDao.upsertTasks(seriesTasks.map { it.copy(taskId = 0, dayId = dayId) })
             }
         }
         dates.forEach { d ->

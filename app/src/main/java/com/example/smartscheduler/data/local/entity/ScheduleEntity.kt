@@ -60,7 +60,9 @@ data class ScheduleTaskEntity(
     /** ไอคอนที่เลือก (ชื่อใน TaskIcons) null = ตามหมวด/ประเภท */
     val icon: String? = null,
     /** หมวดหมู่ที่ผู้ใช้สร้าง (CategoryEntity) null = ใช้ประเภทพื้นฐาน */
-    val categoryId: Long? = null
+    val categoryId: Long? = null,
+    /** ชุดที่เพิ่มพร้อมกันจาก "เพิ่มหลายวัน" (หนึ่งกิจกรรม = หนึ่งชุด) ใช้ลบ/แก้สีทั้งชุด */
+    val seriesId: String? = null
 )
 
 /**

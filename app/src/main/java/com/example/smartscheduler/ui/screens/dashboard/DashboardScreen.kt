@@ -415,14 +415,23 @@ private fun DeleteRepeatingDialog(
     val t = edit.task ?: return
     val day = shortDay(edit.date)
     val weekday = com.example.smartscheduler.importer.DayNames.labelTh(Recurrence.dayCode(edit.date.dayOfWeek))
-    val options = if (t.importBatchId != null) listOf(
-        DeleteOption(DeleteScope.THIS, "เฉพาะวันที่ $day", "สัปดาห์อื่นยังมีคาบนี้ตามเดิม"),
-        DeleteOption(DeleteScope.FOLLOWING, "ตั้งแต่ $day เป็นต้นไป", "ทุก$weekday ที่เหลือของภาคเรียน"),
-        DeleteOption(DeleteScope.ALL, "ทุกสัปดาห์", "ทุก$weekday ตั้งแต่วันนี้ วันที่ผ่านมาแล้วไม่ลบ")
-    ) else listOf(
-        DeleteOption(DeleteScope.THIS, "เฉพาะวันที่ $day", "กิจวัตรยังอยู่ วันอื่นไม่เปลี่ยน"),
-        DeleteOption(DeleteScope.ALL, "ทุกวัน (เอาออกจากกิจวัตร)", "ลบจากกิจวัตรและทุกวันข้างหน้า วันที่ผ่านมาแล้วไม่ลบ")
-    )
+    val options = when {
+        t.importBatchId != null -> listOf(
+            DeleteOption(DeleteScope.THIS, "เฉพาะวันที่ $day", "สัปดาห์อื่นยังมีคาบนี้ตามเดิม"),
+            DeleteOption(DeleteScope.FOLLOWING, "ตั้งแต่ $day เป็นต้นไป", "ทุก$weekday ที่เหลือของภาคเรียน"),
+            DeleteOption(DeleteScope.ALL, "ทุกสัปดาห์", "ทุก$weekday ตั้งแต่วันนี้ วันที่ผ่านมาแล้วไม่ลบ")
+        )
+        t.originTemplateTaskId != null -> listOf(
+            DeleteOption(DeleteScope.THIS, "เฉพาะวันที่ $day", "กิจวัตรยังอยู่ วันอื่นไม่เปลี่ยน"),
+            DeleteOption(DeleteScope.ALL, "ทุกวัน (เอาออกจากกิจวัตร)", "ลบจากกิจวัตรและทุกวันข้างหน้า วันที่ผ่านมาแล้วไม่ลบ")
+        )
+        // เพิ่มพร้อมกันหลายวัน
+        else -> listOf(
+            DeleteOption(DeleteScope.THIS, "เฉพาะวันที่ $day", "วันอื่นที่เพิ่มพร้อมกันยังอยู่"),
+            DeleteOption(DeleteScope.FOLLOWING, "ตั้งแต่ $day เป็นต้นไป", "รายการนี้ทุกวันหลังจากนั้น"),
+            DeleteOption(DeleteScope.ALL, "ทุกวันที่เพิ่มพร้อมกัน", "ตั้งแต่วันนี้ วันที่ผ่านมาแล้วไม่ลบ")
+        )
+    }
     DeleteScopeDialog(itemTitle = t.title, options = options, onConfirm = onConfirm, onDismiss = onDismiss)
 }
 

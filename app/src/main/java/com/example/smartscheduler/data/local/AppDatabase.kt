@@ -21,7 +21,7 @@ import com.example.smartscheduler.data.local.entity.*
         StockRecommendationEntity::class,
         CategoryEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -75,6 +75,27 @@ abstract class AppDatabase : RoomDatabase() {
                     db.execSQL("ALTER TABLE $table ADD COLUMN icon TEXT")
                     db.execSQL("ALTER TABLE $table ADD COLUMN categoryId INTEGER")
                 }
+            }
+        }
+
+        /**
+         * v7: จำชุดของกิจกรรมที่เพิ่มพร้อมกันหลายวัน
+         * ข้อมูลเดิม: กิจกรรมที่เพิ่มเอง (ไม่ใช่กิจวัตร/ตารางนำเข้า) ชื่อ เวลาเริ่ม และความยาวเดียวกัน
+         * ที่มีมากกว่า 1 วัน จัดเป็นชุดเดียวกัน
+         */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE schedule_tasks ADD COLUMN seriesId TEXT")
+                db.execSQL(
+                    """UPDATE schedule_tasks
+                       SET seriesId = 'legacy:' || title || ':' || startHour || ':' || startMinute || ':' || durationMinutes
+                       WHERE originTemplateTaskId IS NULL AND importBatchId IS NULL
+                         AND (SELECT COUNT(*) FROM schedule_tasks t2
+                              WHERE t2.originTemplateTaskId IS NULL AND t2.importBatchId IS NULL
+                                AND t2.title = schedule_tasks.title AND t2.startHour = schedule_tasks.startHour
+                                AND t2.startMinute = schedule_tasks.startMinute
+                                AND t2.durationMinutes = schedule_tasks.durationMinutes) > 1"""
+                )
             }
         }
 
