@@ -1,6 +1,7 @@
 package com.example.smartscheduler.ui.screens.dashboard
 
 import android.content.Context
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -242,6 +243,9 @@ fun DashboardScreen(
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsState()
+
+    // ปุ่มย้อนกลับของเครื่อง: ดูรายวัน/รายสัปดาห์อยู่ ให้กลับไปหน้าเดือนก่อน (ยังไม่ออกจากแอป)
+    BackHandler(enabled = state.mode != CalendarMode.MONTH) { viewModel.setMode(CalendarMode.MONTH) }
     var editing by remember { mutableStateOf<DashEdit?>(null) }
     var deleting by remember { mutableStateOf<DashEdit?>(null) }
     val context = LocalContext.current
