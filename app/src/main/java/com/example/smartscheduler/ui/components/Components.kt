@@ -741,45 +741,100 @@ fun ColorPicker(kind: TaskKind, selected: String?, categoryId: Long? = null, onS
         onChange = { onSelect(TaskPalette.withStrength(TaskPalette.hueKey(it), strength)) }
     )
     StrengthSlider(
+        base = base,
         strength = strength,
-        enabled = base != null,
-        accent = TaskPalette.resolve(selected, dark)?.first ?: baseAccent,
+        dark = dark,
         onChange = { onSelect(TaskPalette.withStrength(base, it)) }
     )
 }
 
-/** ปรับความเข้ม/จางของสีที่เลือก 0–100 (50 = ปกติ) ทีละ 10 */
+/**
+ * แถบเลื่อนความเข้ม: ไล่สีที่เลือกจากจางสุด (ซ้าย) ไปเข้มสุด (ขวา) ลากได้ต่อเนื่อง 0–100 (50 = ปกติ)
+ * หน้าตาเหมือนแถบสีรุ้ง ตัวเลื่อนแสดงสีที่ได้จริง
+ */
 @Composable
-private fun StrengthSlider(strength: Int, enabled: Boolean, accent: Color, onChange: (Int) -> Unit) {
+private fun StrengthSlider(base: String?, strength: Int, dark: Boolean, onChange: (Int) -> Unit) {
     val c = AppTheme.colors
+    val enabled = base != null
     val word = when {
         strength <= 20 -> "จางมาก"
-        strength < 50 -> "จาง"
-        strength == 50 -> "ปกติ"
+        strength < 45 -> "จาง"
+        strength <= 55 -> "ปกติ"
         strength < 80 -> "เข้ม"
         else -> "เข้มมาก"
     }
+    var widthPx by remember { mutableStateOf(1) }
+    val density = LocalDensity.current
+    val thumb = 32.dp
+    val thumbPx = with(density) { thumb.toPx() }
+    val latest by rememberUpdatedState(onChange)
+    val ramp = remember(base, dark) {
+        if (base == null) null
+        else Brush.horizontalGradient((0..10).map { TaskPalette.resolve(TaskPalette.withStrength(base, it * 10), dark)!!.first })
+    }
+
+    fun valueAt(x: Float): Int {
+        val usable = (widthPx - thumbPx).coerceAtLeast(1f)
+        return (((x - thumbPx / 2) / usable).coerceIn(0f, 1f) * 100).roundToInt()
+    }
+
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("ความเข้มของสี", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-            Text(if (enabled) word else "", style = MaterialTheme.typography.bodyMedium, color = c.muted)
+            if (enabled) Text(word, style = MaterialTheme.typography.bodyMedium, color = c.muted)
         }
-        Slider(
-            value = strength.toFloat(),
-            onValueChange = { onChange(((it / 10f).roundToInt() * 10)) },
-            valueRange = 0f..100f,
-            steps = 9,
-            enabled = enabled,
-            colors = SliderDefaults.colors(
-                thumbColor = accent,
-                activeTrackColor = accent,
-                inactiveTrackColor = c.line,
-                activeTickColor = c.surface.copy(alpha = 0.6f),
-                inactiveTickColor = c.muted.copy(alpha = 0.5f)
-            ),
-            modifier = Modifier.fillMaxWidth().semantics { stateDescription = word }
-        )
-        if (!enabled) Hint("เลือกสีด้านบนก่อน แล้วปรับให้เข้มหรือจางได้")
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .onSizeChanged { widthPx = it.width }
+                .then(
+                    if (!enabled) Modifier else Modifier
+                        .pointerInput(Unit) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown()
+                                latest(valueAt(down.position.x))
+                                horizontalDrag(down.id) { change ->
+                                    latest(valueAt(change.position.x))
+                                    change.consume()
+                                }
+                            }
+                        }
+                        .semantics {
+                            contentDescription = "แถบความเข้มของสี"
+                            stateDescription = word
+                            progressBarRangeInfo = ProgressBarRangeInfo(strength.toFloat(), 0f..100f)
+                            setProgress { v -> latest(v.roundToInt().coerceIn(0, 100)); true }
+                        }
+                ),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            Box(
+                Modifier
+                    .padding(horizontal = thumb / 2)
+                    .fillMaxWidth()
+                    .height(24.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .then(if (ramp != null) Modifier.background(ramp) else Modifier.background(c.line))
+            )
+            if (enabled) {
+                val usable = (widthPx - thumbPx).coerceAtLeast(0f)
+                val x = with(density) { (usable * strength / 100f).toDp() }
+                val chosen = TaskPalette.resolve(TaskPalette.withStrength(base, strength), dark)?.first ?: c.ink
+                Box(
+                    Modifier
+                        .offset(x = x)
+                        .size(thumb)
+                        .clip(CircleShape)
+                        .background(c.surface)
+                        .border(2.dp, c.ink, CircleShape)
+                        .padding(4.dp)
+                        .clip(CircleShape)
+                        .background(chosen)
+                )
+            }
+        }
+        if (!enabled) Hint("เลือกสีด้านบนก่อน แล้วเลื่อนให้เข้มหรือจางได้")
     }
 }
 
