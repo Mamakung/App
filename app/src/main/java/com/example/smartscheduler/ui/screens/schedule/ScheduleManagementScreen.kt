@@ -266,12 +266,6 @@ fun RoutineScreen(
                     }
                 }
 
-                item { CategoriesSection() }
-
-                item {
-                    SectionTitle("เกี่ยวกับแอป", Modifier.padding(top = 12.dp))
-                    Panel { AppVersionRow(rememberAppUpdateViewModel()) }
-                }
             }
         }
 

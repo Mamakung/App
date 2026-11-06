@@ -108,8 +108,11 @@ class DashboardViewModel @Inject constructor(
     @ApplicationContext context: Context,
     private val repo: ScheduleRepository,
     private val auth: CurrentUser,
-    private val semesters: SemesterStore
+    private val semesters: SemesterStore,
+    settings: com.example.smartscheduler.settings.AppSettings
 ) : ViewModel() {
+    /** รูปแบบเมนูปุ่ม + (ตั้งค่าในหน้าตั้งค่า) */
+    val fabStyle = settings.fabStyle
 
     private val uid get() = auth.uid
     private val prefs = context.getSharedPreferences("calendar", Context.MODE_PRIVATE)
@@ -316,13 +319,25 @@ fun DashboardScreen(
             }
         }
 
-        ExtendedFloatingActionButton(
-            onClick = { editing = DashEdit(null, state.date) },
-            containerColor = c.ink,
-            contentColor = c.ground,
-            icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-            text = { Text(if (state.date == today) "เพิ่มวันนี้" else "เพิ่มวันที่ ${shortDay(state.date)}") },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp)
+        // ปุ่ม + : กด/กดค้างแล้วกางเมนูไอคอน (เพิ่มลงวันที่เลือก / เพิ่มหลายวัน)
+        val fabStyle by viewModel.fabStyle.collectAsState()
+        val addDayLabel = if (state.date == today) "เพิ่มวันนี้" else "เพิ่มวันที่ ${shortDay(state.date)}"
+        AddMenuFab(
+            style = fabStyle,
+            actions = listOf(
+                AddMenuAction(
+                    label = addDayLabel,
+                    tint = { AppTheme.colors.now },
+                    icon = { tint -> DayNumberIcon(state.date.dayOfMonth, tint) },
+                    onClick = { editing = DashEdit(null, state.date) }
+                ),
+                AddMenuAction(
+                    label = "เพิ่มหลายวัน",
+                    tint = { AppTheme.colors.study },
+                    icon = { tint -> Icon(StackedCalendars, contentDescription = null, tint = tint, modifier = Modifier.size(26.dp)) },
+                    onClick = onOpenBatchAssign
+                )
+            )
         )
     }
 

@@ -96,7 +96,7 @@ fun LoginRegisterScreen(
                 style = MaterialTheme.typography.headlineMedium
             )
             Text(
-                "Smart Scheduler + AI Stock Assistant",
+                "Smart Scheduler",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

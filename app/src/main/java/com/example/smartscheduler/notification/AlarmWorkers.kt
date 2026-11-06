@@ -49,9 +49,8 @@ class RescheduleAlarmsWorker @AssistedInject constructor(
 }
 
 /**
- * Periodic worker (enqueued daily, e.g. at 00:05) that pre-generates the next day's
- * schedule from the active template ahead of time, and refreshes cached stock quotes
- * + AI news summaries so the Dashboard/Stock Hub load instantly in the morning.
+ * Periodic worker (enqueued daily) that pre-generates the next days'
+ * schedule from the active template ahead of time.
  */
 @HiltWorker
 class DailyRefreshWorker @AssistedInject constructor(

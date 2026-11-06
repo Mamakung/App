@@ -3,7 +3,7 @@ package com.example.smartscheduler.navigation
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.ShowChart
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -38,8 +38,7 @@ import com.example.smartscheduler.ui.screens.auth.LoginRegisterScreen
 import com.example.smartscheduler.ui.screens.dashboard.DashboardScreen
 import com.example.smartscheduler.ui.screens.schedule.BatchAssignScreen
 import com.example.smartscheduler.ui.screens.schedule.RoutineScreen
-import com.example.smartscheduler.ui.screens.stocks.StockAnalysisScreen
-import com.example.smartscheduler.ui.screens.stocks.StockMarketHubScreen
+import com.example.smartscheduler.ui.screens.settings.SettingsScreen
 
 object Routes {
     const val AUTH = "auth"
@@ -47,10 +46,7 @@ object Routes {
     const val ROUTINE = "routine"
     const val BATCH_ASSIGN = "batch_assign"
     const val IMPORT = "import"
-    const val STOCK_HUB = "stock_hub"
-    const val STOCK_ANALYSIS = "stock_analysis/{symbol}/{market}"
-
-    fun stockAnalysis(symbol: String, market: String) = "stock_analysis/$symbol/$market"
+    const val SETTINGS = "settings"
 }
 
 private data class TabItem(val route: String, val label: String, val icon: ImageVector)
@@ -58,7 +54,7 @@ private data class TabItem(val route: String, val label: String, val icon: Image
 private val tabs = listOf(
     TabItem(Routes.DASHBOARD, "ปฏิทิน", Icons.Filled.CalendarMonth),
     TabItem(Routes.ROUTINE, "กิจวัตร", Icons.Filled.Repeat),
-    TabItem(Routes.STOCK_HUB, "หุ้น", Icons.Filled.ShowChart)
+    TabItem(Routes.SETTINGS, "ตั้งค่า", Icons.Filled.Settings)
 )
 
 @Composable
@@ -141,22 +137,7 @@ fun AppNavGraph(startDestination: String = Routes.AUTH, openUpdateOnStart: Boole
             composable(Routes.BATCH_ASSIGN) {
                 BatchAssignScreen(onBack = { navController.popBackStack() })
             }
-            composable(Routes.STOCK_HUB) {
-                StockMarketHubScreen(
-                    onOpenStockDetail = { symbol, market ->
-                        navController.navigate(Routes.stockAnalysis(symbol, market))
-                    }
-                )
-            }
-            composable(
-                route = Routes.STOCK_ANALYSIS,
-                arguments = listOf(
-                    navArgument("symbol") { type = NavType.StringType },
-                    navArgument("market") { type = NavType.StringType }
-                )
-            ) {
-                StockAnalysisScreen(onBack = { navController.popBackStack() })
-            }
+            composable(Routes.SETTINGS) { SettingsScreen() }
         }
     }
     }

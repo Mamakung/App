@@ -26,7 +26,7 @@ class SmartSchedulerApp : Application(), Configuration.Provider {
             .setWorkerFactory(workerFactory)
             .build()
 
-    /** Spec #2/#6 support: pre-generate tomorrow's schedule + refresh stock caches once a day. */
+    /** สร้างตารางล่วงหน้าวันละครั้ง */
     private fun scheduleDailyRefreshWorker() {
         val request = PeriodicWorkRequestBuilder<DailyRefreshWorker>(24, TimeUnit.HOURS)
             .setConstraints(
