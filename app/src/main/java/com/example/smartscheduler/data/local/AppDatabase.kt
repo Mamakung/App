@@ -20,7 +20,7 @@ import com.example.smartscheduler.data.local.entity.*
         MarketNewsSummaryEntity::class,
         StockRecommendationEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -40,6 +40,19 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE routine_template_tasks ADD COLUMN repeatMonths TEXT")
             }
         }
+
+        /**
+         * v4: จำว่าคาบไหนมาจากการนำเข้าตาราง เพื่อลบหรือแทนที่ทั้งชุดได้
+         * คาบเรียนที่นำเข้าก่อนเวอร์ชันนี้ (ประเภทเรียน ไม่ได้มาจากกิจวัตร) ถูกรวมเป็นชุด "legacy"
+         */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE schedule_tasks ADD COLUMN importBatchId TEXT")
+                db.execSQL("UPDATE schedule_tasks SET importBatchId = '$LEGACY_IMPORT' WHERE kind = 'CLASS' AND originTemplateTaskId IS NULL")
+            }
+        }
+
+        const val LEGACY_IMPORT = "legacy"
 
         const val DATABASE_NAME = "smart_scheduler_ai.db"
     }

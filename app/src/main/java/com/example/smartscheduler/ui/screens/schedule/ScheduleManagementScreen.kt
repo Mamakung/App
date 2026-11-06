@@ -86,6 +86,12 @@ class RoutineViewModel @Inject constructor(
         viewModelScope.launch { repo.deleteTemplateTask(uid, t.templateId, task) }
     }
 
+    /** ลบหลายรายการออกจากกิจวัตรพร้อมกัน */
+    fun deleteTasks(ids: Set<Long>) {
+        val t = state.value.template ?: return
+        viewModelScope.launch { repo.deleteTemplateTasks(uid, t.templateId, ids.toList()) }
+    }
+
     /** ตั้งวันทำซ้ำเดียวกันให้ทุกรายการที่เลือก */
     fun setRepeat(ids: Set<Long>, days: Set<String>, months: Set<Int>) {
         val t = state.value.template ?: return
@@ -113,6 +119,9 @@ fun RoutineScreen(
     /** null = ไม่ได้อยู่ในโหมดเลือก, ไม่ null = id ที่เลือกไว้ */
     var selection by remember { mutableStateOf<Set<Long>?>(null) }
     var askRepeat by remember { mutableStateOf(false) }
+    var askDeleteSelected by remember { mutableStateOf(false) }
+    var deletingOne by remember { mutableStateOf<RoutineTemplateTaskEntity?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
     val template = state.template
     val c = AppTheme.colors
 
@@ -180,7 +189,7 @@ fun RoutineScreen(
                     }
                 }
                 if (sel != null) {
-                    Hint("แตะรายการที่อยากให้ทำซ้ำวันเดียวกัน แล้วกด \"ตั้งวันทำซ้ำ\" ด้านล่าง")
+                    Hint("แตะรายการที่ต้องการ แล้วกด \"ตั้งวันทำซ้ำ\" หรือ \"ลบ\" ด้านล่าง")
                     Spacer(Modifier.height(8.dp))
                 }
                 Panel(padding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
@@ -269,6 +278,9 @@ fun RoutineScreen(
                     HorizontalDivider(color = c.line, modifier = Modifier.padding(bottom = 12.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         TextButton(onClick = { selection = null }) { Text("ยกเลิก") }
+                        TextButton(onClick = { askDeleteSelected = true }, enabled = sel.isNotEmpty()) {
+                            Text("ลบ", color = if (sel.isNotEmpty()) MaterialTheme.colorScheme.error else c.muted)
+                        }
                         Spacer(Modifier.width(8.dp))
                         InkButton(
                             text = if (sel.isEmpty()) "เลือกอย่างน้อย 1 รายการ" else "ตั้งวันทำซ้ำ ${sel.size} รายการ",
@@ -320,8 +332,38 @@ fun RoutineScreen(
             initial = initial,
             footnote = "มีผลกับวันข้างหน้าที่ตรงกับวันทำซ้ำ ยกเว้นวันที่ปรับเองแล้ว",
             onSave = { viewModel.saveTask(edit.task, it); editing = null },
-            onDelete = edit.task?.let { t -> { viewModel.deleteTask(t); editing = null } },
+            onDelete = edit.task?.let { t -> { deletingOne = t; editing = null } },
             onDismiss = { editing = null }
+        )
+    }
+
+    deletingOne?.let { t ->
+        ConfirmDeleteDialog(
+            title = "ลบ \"${t.title}\" ออกจากกิจวัตร",
+            message = "จะหายจากทุกวันข้างหน้า วันที่ผ่านมาแล้วไม่ลบ ถ้าอยากเอาออกแค่บางวัน ให้ลบจากหน้าปฏิทินแทน",
+            confirmText = "ลบออกจากกิจวัตร",
+            onConfirm = {
+                viewModel.deleteTask(t)
+                android.widget.Toast.makeText(context, "ลบ \"${t.title}\" แล้ว", android.widget.Toast.LENGTH_SHORT).show()
+                deletingOne = null
+            },
+            onDismiss = { deletingOne = null }
+        )
+    }
+
+    if (askDeleteSelected && sel != null) {
+        ConfirmDeleteDialog(
+            title = "ลบ ${sel.size} รายการ",
+            message = state.tasks.filter { it.templateTaskId in sel }.joinToString("\n") { "• ${it.title}" } +
+                "\n\nจะหายจากทุกวันข้างหน้า วันที่ผ่านมาแล้วไม่ลบ",
+            confirmText = "ลบ ${sel.size} รายการ",
+            onConfirm = {
+                viewModel.deleteTasks(sel)
+                android.widget.Toast.makeText(context, "ลบ ${sel.size} รายการแล้ว", android.widget.Toast.LENGTH_SHORT).show()
+                askDeleteSelected = false
+                selection = null
+            },
+            onDismiss = { askDeleteSelected = false }
         )
     }
 }

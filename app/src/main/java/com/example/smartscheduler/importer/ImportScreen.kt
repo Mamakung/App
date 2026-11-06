@@ -30,7 +30,13 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.smartscheduler.data.local.AppDatabase
+import com.example.smartscheduler.data.local.dao.ImportBatchSummary
 import com.example.smartscheduler.data.local.entity.ScheduleTaskEntity
+import android.widget.Toast
+import androidx.compose.material.icons.filled.DeleteOutline
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import com.example.smartscheduler.data.repository.ScheduleRepository
 import com.example.smartscheduler.data.session.CurrentUser
 import com.example.smartscheduler.domain.model.Recurrence
@@ -121,6 +127,15 @@ class ImportViewModel @Inject constructor(
 
     private val _state = MutableStateFlow(freshState())
     val state: StateFlow<ImportUiState> = _state.asStateFlow()
+
+    /** ตารางที่นำเข้าไว้ ที่ยังมีคาบตั้งแต่วันนี้ */
+    val batches: StateFlow<List<ImportBatchSummary>> = repo.observeImportBatches(user.uid)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** ลบตารางที่นำเข้าทั้งชุด (null = ทุกชุด) */
+    fun removeBatch(batchId: String?, onDone: (Int) -> Unit) {
+        viewModelScope.launch { onDone(repo.removeImported(user.uid, batchId)) }
+    }
 
     private var pendingUri: Uri? = null
 
@@ -250,6 +265,9 @@ fun ImportScreen(onBack: () -> Unit, onDone: () -> Unit, viewModel: ImportViewMo
         uri?.let(viewModel::onFilePicked)
     }
     var editing by remember { mutableStateOf<TimetableEntry?>(null) }
+    val batches by viewModel.batches.collectAsState()
+    var removing by remember { mutableStateOf<ImportBatchSummary?>(null) }
+    val context = LocalContext.current
 
     Scaffold(
         containerColor = c.ground,
@@ -297,7 +315,10 @@ fun ImportScreen(onBack: () -> Unit, onDone: () -> Unit, viewModel: ImportViewMo
             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp)
         ) {
             when (state.stage) {
-                ImportStage.PICK -> item { PickStep(state, onPick = { picker.launch(pickTypes) }) }
+                ImportStage.PICK -> {
+                    if (batches.isNotEmpty()) item { ImportedBatches(batches, onRemove = { removing = it }) }
+                    item { PickStep(state, onPick = { picker.launch(pickTypes) }) }
+                }
                 ImportStage.READING -> item {
                     Column(Modifier.fillMaxWidth().padding(vertical = 48.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(color = c.ink)
@@ -329,9 +350,9 @@ fun ImportScreen(onBack: () -> Unit, onDone: () -> Unit, viewModel: ImportViewMo
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(Modifier.weight(1f)) {
-                                Text("แทนที่ตารางเดิมในวันที่มีเรียน", style = MaterialTheme.typography.bodyLarge)
+                                Text("แทนที่ตารางที่นำเข้าไว้เดิม", style = MaterialTheme.typography.bodyLarge)
                                 Hint(
-                                    if (state.replaceExisting) "ช่วงทำงาน/พักของกิจวัตรในวันเหล่านั้นจะถูกแทนด้วยตารางนี้"
+                                    if (state.replaceExisting) "ลบตารางที่เคยนำเข้าทั้งหมด แล้วลงตารางนี้แทน ช่วงทำงาน/พักในวันที่มีเรียนจะถูกแทนด้วย"
                                     else "เพิ่มต่อท้ายรายการเดิม อาจมีเวลาซ้อนกัน"
                                 )
                             }
@@ -375,6 +396,22 @@ fun ImportScreen(onBack: () -> Unit, onDone: () -> Unit, viewModel: ImportViewMo
             title = { Text("นำเข้าไม่สำเร็จ") },
             text = { Text(msg) },
             confirmButton = { TextButton(onClick = viewModel::dismissError) { Text("ตกลง") } }
+        )
+    }
+
+    removing?.let { b ->
+        ConfirmDeleteDialog(
+            title = "ลบตารางที่นำเข้านี้",
+            message = "ลบ ${b.taskCount} คาบ (${b.subjectCount} วิชา) ตั้งแต่วันนี้ถึง ${thaiShortDate(LocalDate.ofEpochDay(b.lastDay))} " +
+                "วันที่ผ่านมาแล้วไม่ลบ วันที่ว่างลงจะกลับไปใช้กิจวัตรมาตรฐาน รายการที่เพิ่มเองไม่โดนลบ",
+            confirmText = "ลบ ${b.taskCount} คาบ",
+            onConfirm = {
+                viewModel.removeBatch(b.batchId) { days ->
+                    Toast.makeText(context, "ลบตารางแล้ว แก้ $days วัน", Toast.LENGTH_SHORT).show()
+                }
+                removing = null
+            },
+            onDismiss = { removing = null }
         )
     }
 
@@ -441,6 +478,38 @@ private fun SemesterSection(state: ImportUiState, viewModel: ImportViewModel) {
                 )
             }
         }
+    }
+}
+
+/** ตารางที่เคยนำเข้า ลบได้ทั้งชุด */
+@Composable
+private fun ImportedBatches(batches: List<ImportBatchSummary>, onRemove: (ImportBatchSummary) -> Unit) {
+    val c = AppTheme.colors
+    Column {
+        SectionTitle("ตารางที่นำเข้าไว้", Modifier.padding(top = 0.dp))
+        Panel(padding = PaddingValues(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)) {
+            batches.forEachIndexed { i, b ->
+                if (i > 0) HorizontalDivider(color = c.line)
+                Row(Modifier.fillMaxWidth().heightIn(min = 64.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
+                        Text(
+                            if (b.batchId == AppDatabase.LEGACY_IMPORT) "คาบเรียนที่นำเข้าก่อนหน้านี้" else "ตาราง ${b.subjectCount} วิชา",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Hint(
+                            "${b.taskCount} คาบ · ${thaiShortDate(LocalDate.ofEpochDay(b.firstDay))} – ${thaiShortDate(LocalDate.ofEpochDay(b.lastDay))}"
+                        )
+                    }
+                    TextButton(onClick = { onRemove(b) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Icon(Icons.Filled.DeleteOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                        Spacer(Modifier.width(4.dp))
+                        Text("ลบทั้งชุด", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+        }
+        Hint("ลบแค่บางคาบหรือบางวัน: แตะคาบนั้นในปฏิทินแล้วกดลบ", Modifier.padding(top = 8.dp))
+        Spacer(Modifier.height(24.dp))
     }
 }
 

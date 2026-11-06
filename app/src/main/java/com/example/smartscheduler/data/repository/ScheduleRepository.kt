@@ -4,7 +4,9 @@ import androidx.room.withTransaction
 import com.example.smartscheduler.data.local.AppDatabase
 import com.example.smartscheduler.data.local.dao.RoutineDao
 import com.example.smartscheduler.data.local.dao.ScheduleDao
+import com.example.smartscheduler.data.local.dao.ImportBatchSummary
 import com.example.smartscheduler.data.local.dao.ScheduleDayWithTasks
+import com.example.smartscheduler.data.local.dao.TaskOnDate
 import com.example.smartscheduler.data.local.entity.*
 import com.example.smartscheduler.domain.model.Recurrence
 import com.example.smartscheduler.domain.model.TaskKind
@@ -17,6 +19,12 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val ALARM_SLOTS = 40
+
+/** ลบรายการที่ซ้ำ: เฉพาะวันนี้ / วันนี้และวันถัดไป / ทุกวัน (วันที่ผ่านมาแล้วไม่แตะเสมอ) */
+enum class DeleteScope { THIS, FOLLOWING, ALL }
+
+/** รายการนี้ซ้ำหลายวันหรือไม่ (มาจากกิจวัตรหรือจากตารางที่นำเข้า) */
+val ScheduleTaskEntity.isRepeating: Boolean get() = importBatchId != null || originTemplateTaskId != null
 
 /** วันทำซ้ำของรายการนี้ (ถ้าไม่ได้ตั้งเอง ใช้ค่าเริ่มต้นของกิจวัตร) */
 fun RoutineTemplateTaskEntity.effectiveDays(template: RoutineTemplateEntity): String = repeatDays ?: template.appliesToDaysOfWeek
@@ -120,9 +128,68 @@ class ScheduleRepository @Inject constructor(
         afterTemplateChange(uid, templateId)
     }
 
-    suspend fun deleteTemplateTask(uid: String, templateId: Long, task: RoutineTemplateTaskEntity) {
-        routineDao.deleteTemplateTask(task)
+    suspend fun deleteTemplateTask(uid: String, templateId: Long, task: RoutineTemplateTaskEntity) =
+        deleteTemplateTasks(uid, templateId, listOf(task.templateTaskId))
+
+    /**
+     * ลบหลายรายการออกจากกิจวัตร แล้วเอาออกจากทุกวันข้างหน้าด้วย
+     * รวมวันที่เคยปรับเอง (ซึ่งปกติกิจวัตรไม่ไปแก้) เพราะผู้ใช้สั่งลบรายการนี้ทั้งหมด
+     */
+    suspend fun deleteTemplateTasks(uid: String, templateId: Long, templateTaskIds: List<Long>) {
+        if (templateTaskIds.isEmpty()) return
+        templateTaskIds.forEach { routineDao.deleteTemplateTaskById(it) }
+        removeTasks(uid, scheduleDao.findTemplateCopies(uid, templateTaskIds, LocalDate.now().toEpochDay()), restoreRoutine = false)
         afterTemplateChange(uid, templateId)
+    }
+
+    /**
+     * ลบรายการจากปฏิทินตามขอบเขตที่เลือก
+     *  - THIS: เฉพาะวันนี้ (กิจวัตรไม่เปลี่ยน)
+     *  - FOLLOWING: คาบนี้ในวันนั้นและวันถัดไปทั้งหมด (ตารางที่นำเข้า)
+     *  - ALL: ทุกวันตั้งแต่วันนี้ ถ้ามาจากกิจวัตรจะเอาออกจากกิจวัตรด้วย
+     */
+    suspend fun deleteTask(uid: String, task: ScheduleTaskEntity, scope: DeleteScope) {
+        if (scope == DeleteScope.THIS || !task.isRepeating) return deleteSingleDayTask(task)
+        val day = scheduleDao.getDayById(task.dayId) ?: return
+        val today = LocalDate.now().toEpochDay()
+        val from = if (scope == DeleteScope.FOLLOWING) maxOf(day.dateEpochDay, today) else today
+        val batch = task.importBatchId
+        val origin = task.originTemplateTaskId
+        when {
+            batch != null -> {
+                val weekday = LocalDate.ofEpochDay(day.dateEpochDay).dayOfWeek
+                val hits = scheduleDao.findImportedSeries(uid, batch, task.title, task.startHour, task.startMinute, from)
+                    .filter { LocalDate.ofEpochDay(it.dateEpochDay).dayOfWeek == weekday }
+                // วันที่เลือกอยู่ในอดีตก็ลบอันที่เลือกไว้ด้วย
+                val withSelf = if (hits.any { it.taskId == task.taskId }) hits
+                else hits + TaskOnDate(task.taskId, task.dayId, day.dateEpochDay)
+                removeTasks(uid, withSelf, restoreRoutine = true)
+            }
+            origin != null -> {
+                // กิจวัตรลบได้แค่ "วันนี้" หรือ "ทุกวัน" (วันที่ยังไม่สร้างจะได้ไม่กลับมาอีก)
+                val template = routineDao.getActiveTemplate(uid)
+                if (template != null) deleteTemplateTasks(uid, template.templateId, listOf(origin))
+                else removeTasks(uid, scheduleDao.findTemplateCopies(uid, listOf(origin), from), restoreRoutine = false)
+            }
+        }
+    }
+
+    /**
+     * ลบรายการชุดหนึ่ง ยกเลิกเตือน แล้วตั้งเตือนใหม่
+     * [restoreRoutine] = วันที่ว่างแล้วสร้างใหม่ตามกิจวัตร (ใช้กับตารางที่นำเข้า ซึ่งเคยแทนที่กิจวัตรไว้)
+     */
+    private suspend fun removeTasks(uid: String, hits: List<TaskOnDate>, restoreRoutine: Boolean) {
+        if (hits.isEmpty()) return
+        val byDay = hits.groupBy { it.dayId }
+        for ((dayId, list) in byDay) {
+            alarmScheduler.cancelForDay(dayId, ALARM_SLOTS)
+            scheduleDao.deleteTasksByIds(list.map { it.taskId })
+            if (restoreRoutine && scheduleDao.getTasksForDayOnce(dayId).isEmpty()) {
+                resetDayToTemplate(uid, LocalDate.ofEpochDay(list.first().dateEpochDay))
+            } else {
+                rescheduleDay(dayId)
+            }
+        }
     }
 
     /** ตั้งวันทำซ้ำเดียวกันให้หลายรายการพร้อมกัน */
@@ -271,7 +338,9 @@ class ScheduleRepository @Inject constructor(
     /**
      * ลงตารางรายสัปดาห์ (เช่น ตารางเรียน) ตั้งแต่ [from]
      * แต่ละรายการมีวันสิ้นสุดของตัวเอง (เช่น วิชาที่สอบสัปดาห์ 17 จะเรียนถึงสัปดาห์ 16)
-     * [replaceExisting] = ล้างรายการเดิมของวันที่ได้รับรายการก่อน (เวลาตื่นยังอยู่)
+     * [replaceExisting] = ล้างตารางที่นำเข้าครั้งก่อนทั้งหมดตั้งแต่ [from] (วันที่ว่างแล้วกลับไปใช้กิจวัตร)
+     *   แล้วล้างรายการเดิมของวันที่ได้รับรายการใหม่ (เวลาตื่นยังอยู่)
+     * ทุกคาบติดป้ายชุดเดียวกัน จึงลบทั้งชุดได้ทีหลังด้วย [removeImported]
      * คืนจำนวนวันที่ได้รับรายการ
      */
     suspend fun importWeekly(
@@ -282,6 +351,8 @@ class ScheduleRepository @Inject constructor(
     ): Int {
         val wake = routineDao.getActiveTemplate(uid)?.let { it.wakeUpHour * 60 + it.wakeUpMinute } ?: (7 * 60)
         val limit = from.plusDays(400)
+        val batchId = UUID.randomUUID().toString()
+        if (replaceExisting) removeImported(uid, batchId = null, from = from)
 
         // วันที่ → รายการที่ต้องลงในวันนั้น
         val perDate = sortedMapOf<LocalDate, MutableList<ScheduleTaskEntity>>()
@@ -289,7 +360,9 @@ class ScheduleRepository @Inject constructor(
             var d = from
             val last = minOf(item.until, limit)
             while (!d.isAfter(last)) {
-                if (Recurrence.dayCode(d.dayOfWeek) == item.day) perDate.getOrPut(d) { mutableListOf() } += item.task
+                if (Recurrence.dayCode(d.dayOfWeek) == item.day) {
+                    perDate.getOrPut(d) { mutableListOf() } += item.task.copy(importBatchId = batchId)
+                }
                 d = d.plusDays(1)
             }
         }
@@ -305,6 +378,30 @@ class ScheduleRepository @Inject constructor(
             batchAssign(uid, listOf(date), wake, tasks)
         }
         return perDate.size
+    }
+
+    /** ตารางที่นำเข้าไว้ ที่ยังมีคาบตั้งแต่วันนี้เป็นต้นไป */
+    fun observeImportBatches(uid: String): Flow<List<ImportBatchSummary>> =
+        scheduleDao.observeImportBatches(uid, LocalDate.now().toEpochDay())
+
+    /**
+     * ลบคาบที่นำเข้าทั้งชุด ([batchId] = null คือทุกชุด) ตั้งแต่ [from] วันที่ผ่านมาแล้วไม่แตะ
+     * วันที่ไม่เหลือรายการเลย (เพราะตอนนำเข้าแทนที่กิจวัตรไว้) จะสร้างใหม่ตามกิจวัตรมาตรฐาน
+     * คืนจำนวนวันที่ถูกแก้
+     */
+    suspend fun removeImported(uid: String, batchId: String?, from: LocalDate = LocalDate.now()): Int {
+        val dayIds = scheduleDao.getDaysWithImports(uid, from.toEpochDay(), batchId)
+        for (dayId in dayIds) {
+            val day = scheduleDao.getDayById(dayId) ?: continue
+            alarmScheduler.cancelForDay(dayId, ALARM_SLOTS)
+            scheduleDao.deleteImportedTasks(dayId, batchId)
+            if (scheduleDao.getTasksForDayOnce(dayId).isEmpty()) {
+                resetDayToTemplate(uid, LocalDate.ofEpochDay(day.dateEpochDay))
+            } else {
+                rescheduleDay(dayId)
+            }
+        }
+        return dayIds.size
     }
 
     /** ตั้งปลุกใหม่ให้ทุกวันล่วงหน้า (ใช้หลังรีบูตเครื่อง เพราะระบบล้าง alarm ทิ้ง) */

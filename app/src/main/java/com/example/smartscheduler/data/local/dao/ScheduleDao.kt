@@ -14,6 +14,18 @@ data class ScheduleDayWithTasks(
     val tasks: List<ScheduleTaskEntity>
 )
 
+/** สรุปหนึ่งชุดตารางที่นำเข้า (นับเฉพาะตั้งแต่วันที่ระบุ) */
+data class ImportBatchSummary(
+    val batchId: String,
+    val taskCount: Int,
+    val subjectCount: Int,
+    val firstDay: Long,
+    val lastDay: Long
+)
+
+/** หนึ่งคาบในชุดที่ซ้ำกัน พร้อมวันที่ */
+data class TaskOnDate(val taskId: Long, val dayId: Long, val dateEpochDay: Long)
+
 @Dao
 interface ScheduleDao {
 
@@ -64,6 +76,48 @@ interface ScheduleDao {
 
     @Query("DELETE FROM schedule_tasks WHERE dayId = :dayId")
     suspend fun deleteAllTasksForDay(dayId: Long)
+
+    // ---------- Imported timetables ----------
+
+    @Query(
+        """SELECT t.importBatchId AS batchId, COUNT(*) AS taskCount, COUNT(DISTINCT t.title) AS subjectCount,
+                  MIN(d.dateEpochDay) AS firstDay, MAX(d.dateEpochDay) AS lastDay
+           FROM schedule_tasks t INNER JOIN schedule_days d ON d.dayId = t.dayId
+           WHERE d.ownerUid = :ownerUid AND t.importBatchId IS NOT NULL AND d.dateEpochDay >= :fromEpochDay
+           GROUP BY t.importBatchId ORDER BY firstDay ASC"""
+    )
+    fun observeImportBatches(ownerUid: String, fromEpochDay: Long): Flow<List<ImportBatchSummary>>
+
+    /** วันที่มีคาบจากการนำเข้า ([batchId] = null คือทุกชุด) */
+    @Query(
+        """SELECT DISTINCT t.dayId FROM schedule_tasks t INNER JOIN schedule_days d ON d.dayId = t.dayId
+           WHERE d.ownerUid = :ownerUid AND t.importBatchId IS NOT NULL AND d.dateEpochDay >= :fromEpochDay
+             AND (:batchId IS NULL OR t.importBatchId = :batchId)"""
+    )
+    suspend fun getDaysWithImports(ownerUid: String, fromEpochDay: Long, batchId: String?): List<Long>
+
+    @Query("DELETE FROM schedule_tasks WHERE dayId = :dayId AND importBatchId IS NOT NULL AND (:batchId IS NULL OR importBatchId = :batchId)")
+    suspend fun deleteImportedTasks(dayId: Long, batchId: String?)
+
+    /** คาบเดียวกันจากชุดนำเข้าเดียวกัน (ชื่อและเวลาเริ่มตรงกัน) ตั้งแต่วันที่ระบุ */
+    @Query(
+        """SELECT t.taskId, t.dayId, d.dateEpochDay FROM schedule_tasks t INNER JOIN schedule_days d ON d.dayId = t.dayId
+           WHERE d.ownerUid = :ownerUid AND t.importBatchId = :batchId AND t.title = :title
+             AND t.startHour = :startHour AND t.startMinute = :startMinute AND d.dateEpochDay >= :fromEpochDay"""
+    )
+    suspend fun findImportedSeries(
+        ownerUid: String, batchId: String, title: String, startHour: Int, startMinute: Int, fromEpochDay: Long
+    ): List<TaskOnDate>
+
+    /** รายการที่มาจากกิจวัตรรายการเดียวกัน ตั้งแต่วันที่ระบุ */
+    @Query(
+        """SELECT t.taskId, t.dayId, d.dateEpochDay FROM schedule_tasks t INNER JOIN schedule_days d ON d.dayId = t.dayId
+           WHERE d.ownerUid = :ownerUid AND t.originTemplateTaskId IN (:templateTaskIds) AND d.dateEpochDay >= :fromEpochDay"""
+    )
+    suspend fun findTemplateCopies(ownerUid: String, templateTaskIds: List<Long>, fromEpochDay: Long): List<TaskOnDate>
+
+    @Query("DELETE FROM schedule_tasks WHERE taskId IN (:taskIds)")
+    suspend fun deleteTasksByIds(taskIds: List<Long>)
 
     // ---------- Overrides (audit log for Spec #5) ----------
 

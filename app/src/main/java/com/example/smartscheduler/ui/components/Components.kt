@@ -27,6 +27,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.smartscheduler.data.local.entity.RoutineTemplateEntity
 import com.example.smartscheduler.data.local.entity.RoutineTemplateTaskEntity
+import com.example.smartscheduler.data.repository.DeleteScope
 import com.example.smartscheduler.data.repository.effectiveDays
 import com.example.smartscheduler.data.repository.effectiveMonths
 import androidx.compose.foundation.rememberScrollState
@@ -629,6 +630,82 @@ fun TaskEditorDialog(
                 TextButton(onClick = onDismiss) { Text("ยกเลิก") }
             }
         }
+    )
+}
+
+// ============================================================================
+// Delete scope dialog (รายการที่ซ้ำหลายวัน)
+// ============================================================================
+
+/** หนึ่งตัวเลือกในกล่องลบ: ขอบเขต, หัวข้อ, คำอธิบาย */
+data class DeleteOption(val scope: DeleteScope, val label: String, val detail: String)
+
+/**
+ * ถามก่อนลบรายการที่ซ้ำหลายวัน ว่าจะลบแค่วันนี้หรือทั้งชุด
+ * ค่าเริ่มต้นคือตัวเลือกแรก (ลบน้อยที่สุด) ปุ่มยืนยันบอกชัดว่าจะลบอะไร
+ */
+@Composable
+fun DeleteScopeDialog(
+    itemTitle: String,
+    options: List<DeleteOption>,
+    onConfirm: (DeleteScope) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val c = AppTheme.colors
+    var chosen by remember { mutableStateOf(options.first()) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = c.surface,
+        title = { Text("ลบ \"$itemTitle\"") },
+        text = {
+            Column(Modifier.selectableGroup()) {
+                Text("รายการนี้ซ้ำหลายวัน จะลบแค่ไหน", style = MaterialTheme.typography.bodyMedium, color = c.muted)
+                Spacer(Modifier.height(8.dp))
+                options.forEach { o ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 56.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .selectable(selected = o == chosen, role = Role.RadioButton, onClick = { chosen = o })
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = o == chosen, onClick = null)
+                        Spacer(Modifier.width(8.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(o.label, style = MaterialTheme.typography.bodyLarge)
+                            Hint(o.detail)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(chosen.scope) }) {
+                Text(chosen.label.let { "ลบ$it" }, color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ยกเลิก") } }
+    )
+}
+
+/** ถามยืนยันก่อนลบ (ไม่มีตัวเลือกขอบเขต) */
+@Composable
+fun ConfirmDeleteDialog(
+    title: String,
+    message: String,
+    confirmText: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = AppTheme.colors.surface,
+        title = { Text(title) },
+        text = { Text(message, style = MaterialTheme.typography.bodyMedium) },
+        confirmButton = { TextButton(onClick = onConfirm) { Text(confirmText, color = MaterialTheme.colorScheme.error) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ยกเลิก") } }
     )
 }
 

@@ -51,7 +51,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.smartscheduler.data.local.dao.ScheduleDayWithTasks
 import com.example.smartscheduler.data.local.entity.ScheduleTaskEntity
+import com.example.smartscheduler.data.repository.DeleteScope
 import com.example.smartscheduler.data.repository.ScheduleRepository
+import com.example.smartscheduler.data.repository.isRepeating
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 import com.example.smartscheduler.domain.model.Recurrence
 import com.example.smartscheduler.domain.model.TaskKind
 import com.example.smartscheduler.ui.components.*
@@ -178,7 +182,9 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
-    fun delete(task: ScheduleTaskEntity) { viewModelScope.launch { repo.deleteSingleDayTask(task) } }
+    fun delete(task: ScheduleTaskEntity, scope: DeleteScope = DeleteScope.THIS) {
+        viewModelScope.launch { repo.deleteTask(uid, task, scope) }
+    }
 
     fun resetDay(date: LocalDate) { viewModelScope.launch { repo.resetDayToTemplate(uid, date) } }
 
@@ -231,6 +237,8 @@ fun DashboardScreen(
 ) {
     val state by viewModel.state.collectAsState()
     var editing by remember { mutableStateOf<DashEdit?>(null) }
+    var deleting by remember { mutableStateOf<DashEdit?>(null) }
+    val context = LocalContext.current
     val nowMin = rememberNowMinutes()
     val today = LocalDate.now()
     val c = AppTheme.colors
@@ -315,12 +323,64 @@ fun DashboardScreen(
             initial = edit.task?.toDraft() ?: defaultDraft(TaskKind.TASK, start = ((nowMin / 60) + 1) * 60 % (24 * 60)),
             footnote = "มีผลเฉพาะวันที่ ${shortDay(edit.date)} กิจวัตรมาตรฐานไม่เปลี่ยน",
             onSave = { viewModel.save(edit.date, edit.task, it); editing = null },
-            onDelete = edit.task?.let { t -> { viewModel.delete(t); editing = null } },
+            onDelete = edit.task?.let { t ->
+                {
+                    editing = null
+                    if (t.isRepeating) deleting = edit
+                    else {
+                        viewModel.delete(t)
+                        Toast.makeText(context, "ลบ \"${t.title}\" แล้ว", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
             done = live?.let { it.status == "DONE" },
             onDoneChange = live?.let { t -> { _: Boolean -> viewModel.toggleDone(t) } },
             onDismiss = { editing = null }
         )
     }
+
+    deleting?.let { d ->
+        DeleteRepeatingDialog(
+            edit = d,
+            onConfirm = { scope ->
+                d.task?.let { t ->
+                    viewModel.delete(t, scope)
+                    val what = when (scope) {
+                        DeleteScope.THIS -> "เฉพาะวันที่ ${shortDay(d.date)}"
+                        DeleteScope.FOLLOWING -> "ตั้งแต่ ${shortDay(d.date)} เป็นต้นไป"
+                        DeleteScope.ALL -> "ทุกวันข้างหน้า"
+                    }
+                    Toast.makeText(context, "ลบ \"${t.title}\" $what แล้ว", Toast.LENGTH_SHORT).show()
+                }
+                deleting = null
+            },
+            onDismiss = { deleting = null }
+        )
+    }
+}
+
+// ============================================================================
+// Delete repeating task
+// ============================================================================
+
+@Composable
+private fun DeleteRepeatingDialog(
+    edit: DashEdit,
+    onConfirm: (DeleteScope) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val t = edit.task ?: return
+    val day = shortDay(edit.date)
+    val weekday = com.example.smartscheduler.importer.DayNames.labelTh(Recurrence.dayCode(edit.date.dayOfWeek))
+    val options = if (t.importBatchId != null) listOf(
+        DeleteOption(DeleteScope.THIS, "เฉพาะวันที่ $day", "สัปดาห์อื่นยังมีคาบนี้ตามเดิม"),
+        DeleteOption(DeleteScope.FOLLOWING, "ตั้งแต่ $day เป็นต้นไป", "ทุก$weekday ที่เหลือของภาคเรียน"),
+        DeleteOption(DeleteScope.ALL, "ทุกสัปดาห์", "ทุก$weekday ตั้งแต่วันนี้ วันที่ผ่านมาแล้วไม่ลบ")
+    ) else listOf(
+        DeleteOption(DeleteScope.THIS, "เฉพาะวันที่ $day", "กิจวัตรยังอยู่ วันอื่นไม่เปลี่ยน"),
+        DeleteOption(DeleteScope.ALL, "ทุกวัน (เอาออกจากกิจวัตร)", "ลบจากกิจวัตรและทุกวันข้างหน้า วันที่ผ่านมาแล้วไม่ลบ")
+    )
+    DeleteScopeDialog(itemTitle = t.title, options = options, onConfirm = onConfirm, onDismiss = onDismiss)
 }
 
 // ============================================================================

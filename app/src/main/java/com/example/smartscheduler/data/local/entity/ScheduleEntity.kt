@@ -52,7 +52,9 @@ data class ScheduleTaskEntity(
     val sortOrder: Int = 0,
     val reminderEnabled: Boolean = true,
     val kind: String = "TASK", // WORK / BREAK / TASK
-    val originTemplateTaskId: Long? = null // link back to template task, null if manually inserted
+    val originTemplateTaskId: Long? = null, // link back to template task, null if manually inserted
+    /** ชุดที่นำเข้าจากไฟล์ตาราง (null = เพิ่มเองหรือมาจากกิจวัตร) ใช้ลบหรือแทนที่ทั้งชุด */
+    val importBatchId: String? = null
 )
 
 /**

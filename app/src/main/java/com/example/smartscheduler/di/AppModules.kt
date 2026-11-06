@@ -19,7 +19,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, AppDatabase.DATABASE_NAME)
-            .addMigrations(AppDatabase.MIGRATION_2_3)
+            .addMigrations(AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
             // ต่อไปถ้าเพิ่ม version ต้องเพิ่ม Migration ด้วย ไม่งั้นข้อมูลผู้ใช้จะหายตอนอัปเดต
             .fallbackToDestructiveMigrationFrom(1)
             .build()
