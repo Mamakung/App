@@ -1,5 +1,17 @@
 package com.example.smartscheduler.ui.screens.schedule
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.border
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -46,21 +58,34 @@ data class BatchUiState(
     val days: Set<String> = Recurrence.weekdays,
     val months: Set<Int> = Recurrence.allMonths,
     val explicitDates: List<LocalDate> = emptyList(),
+    /** วันที่ตรงรูปแบบแต่ผู้ใช้แตะเอาออก (โหมดช่วงวันที่) */
+    val excluded: Set<LocalDate> = emptySet(),
+    /** วันที่ไม่ตรงรูปแบบแต่ผู้ใช้แตะใส่เพิ่ม (โหมดช่วงวันที่) */
+    val added: Set<LocalDate> = emptySet(),
     val wakeUpMin: Int = 7 * 60,
     val tasks: List<TaskDraft> = emptyList(),
     val submitting: Boolean = false,
     val message: String? = null
 )
 
-/** วันที่ทั้งหมดที่จะได้รับกิจกรรม (จำกัดช่วงไม่เกิน 1 ปีเพื่อกันกดพลาด) */
-fun BatchUiState.resolvedDates(): List<LocalDate> {
-    if (mode == BatchMode.EXPLICIT) return explicitDates
+/** วันที่ตรงรูปแบบ (ช่วงวันที่ + วันในสัปดาห์ + เดือน) จำกัดไม่เกิน 1 ปีเพื่อกันกดพลาด */
+fun BatchUiState.patternDates(): List<LocalDate> {
     if (endDate.isBefore(startDate)) return emptyList()
     val limit = startDate.plusDays(366)
     return generateSequence(startDate) { it.plusDays(1) }
         .takeWhile { !it.isAfter(endDate) && !it.isAfter(limit) }
         .filter { Recurrence.dayCode(it.dayOfWeek) in days && it.monthValue in months }
         .toList()
+}
+
+/** อยู่ในช่วงวันที่ที่เลือก (แตะใส่เพิ่มได้) */
+fun BatchUiState.inRange(d: LocalDate): Boolean =
+    !d.isBefore(startDate) && !d.isAfter(endDate) && !d.isAfter(startDate.plusDays(366))
+
+/** วันที่ทั้งหมดที่จะได้รับกิจกรรม = ตามรูปแบบ − ที่แตะเอาออก + ที่แตะใส่เพิ่ม */
+fun BatchUiState.resolvedDates(): List<LocalDate> {
+    if (mode == BatchMode.EXPLICIT) return explicitDates
+    return (patternDates().filterNot { it in excluded } + added.filter { inRange(it) }).distinct().sorted()
 }
 
 @HiltViewModel
@@ -80,6 +105,22 @@ class BatchAssignViewModel @Inject constructor(
     fun setWake(v: Int) = _state.update { it.copy(wakeUpMin = v) }
     fun addDate(d: LocalDate) = _state.update { it.copy(explicitDates = (it.explicitDates + d).distinct().sorted()) }
     fun removeDate(d: LocalDate) = _state.update { it.copy(explicitDates = it.explicitDates - d) }
+
+    /** แตะวันในปฏิทินตัวอย่าง: เอาออก / ใส่กลับ / ใส่เพิ่ม ทีละวัน */
+    fun toggleDay(d: LocalDate) = _state.update { s ->
+        when {
+            s.mode == BatchMode.EXPLICIT ->
+                s.copy(explicitDates = if (d in s.explicitDates) s.explicitDates - d else (s.explicitDates + d).sorted())
+            d in s.added -> s.copy(added = s.added - d)
+            d in s.excluded -> s.copy(excluded = s.excluded - d)
+            d in s.patternDates() -> s.copy(excluded = s.excluded + d)
+            s.inRange(d) -> s.copy(added = s.added + d)
+            else -> s
+        }
+    }
+
+    /** ล้างการแตะเอาออก/ใส่เพิ่ม กลับไปตามรูปแบบ */
+    fun resetDayEdits() = _state.update { it.copy(excluded = emptySet(), added = emptySet()) }
 
     fun saveTask(index: Int?, draft: TaskDraft) = _state.update {
         val list = it.tasks.toMutableList()
@@ -204,16 +245,46 @@ fun BatchAssignScreen(onBack: () -> Unit, viewModel: BatchAssignViewModel = hilt
                 }
             }
 
-            if (dates.isNotEmpty()) {
+            if (dates.isNotEmpty() || state.mode == BatchMode.PATTERN) {
                 item {
                     SectionTitle("วันที่จะได้รับ")
-                    val months = dates.map { YearMonth.from(it) }.distinct()
+                    // เดือนที่เลื่อนดูได้: ตั้งแต่เดือนแรกถึงเดือนสุดท้ายของช่วง
+                    val first = YearMonth.from(if (state.mode == BatchMode.PATTERN) state.startDate else dates.firstOrNull() ?: LocalDate.now())
+                    val last = YearMonth.from(if (state.mode == BatchMode.PATTERN) minOf(state.endDate, state.startDate.plusDays(366)) else dates.lastOrNull() ?: LocalDate.now())
+                        .let { if (it.isBefore(first)) first else it }
+                    var shown by remember { mutableStateOf(first) }
+                    if (shown.isBefore(first) || shown.isAfter(last)) shown = first
+                    val pattern = remember(state) { if (state.mode == BatchMode.PATTERN) state.patternDates().toSet() else emptySet() }
+                    // ไอคอนของกิจกรรมที่จะเพิ่ม (ไอคอนเดียวกันสีเดียวกันนับครั้งเดียว) เรียงตามเวลา
+                    val marks = state.tasks.sortedBy { it.startMin }
+                        .map { taskIcon(it.kind, it.icon, it.categoryId) to taskAccent(it.kind, it.color, it.categoryId) }
+                        .distinct()
                     Panel(padding = PaddingValues(12.dp)) {
-                        MonthPreview(months.first(), dates.toSet())
+                        MonthPreview(
+                            month = shown,
+                            marks = marks,
+                            hits = dates.toSet(),
+                            excluded = if (state.mode == BatchMode.PATTERN) state.excluded.filter { it in pattern }.toSet() else emptySet(),
+                            canTap = { d -> state.mode == BatchMode.EXPLICIT || state.inRange(d) },
+                            onPrev = if (shown.isAfter(first)) ({ shown = shown.minusMonths(1) }) else null,
+                            onNext = if (shown.isBefore(last)) ({ shown = shown.plusMonths(1) }) else null,
+                            onTap = viewModel::toggleDay
+                        )
                     }
-                    if (months.size > 1) {
-                        val rest = dates.count { YearMonth.from(it) != months.first() }
-                        Hint("และอีก $rest วันใน ${months.size - 1} เดือนถัดไป", Modifier.padding(top = 6.dp))
+                    val removed = state.excluded.count { it in pattern }
+                    val extra = state.added.count { state.inRange(it) && it !in pattern }
+                    Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Hint(
+                            buildString {
+                                append("แตะวันเพื่อเอาออกหรือใส่กลับ")
+                                if (removed > 0) append(" · เอาออก $removed วัน")
+                                if (extra > 0) append(" · เพิ่มเอง $extra วัน")
+                            },
+                            Modifier.weight(1f)
+                        )
+                        if (state.mode == BatchMode.PATTERN && (removed > 0 || extra > 0)) {
+                            TextButton(onClick = viewModel::resetDayEdits) { Text("คืนค่า") }
+                        }
                     }
                 }
             }
@@ -259,15 +330,37 @@ fun BatchAssignScreen(onBack: () -> Unit, viewModel: BatchAssignViewModel = hilt
     }
 }
 
-/** ปฏิทินหนึ่งเดือน ไฮไลต์วันที่จะได้รับกิจกรรม (สัปดาห์เริ่มวันอาทิตย์) */
+/**
+ * ปฏิทินหนึ่งเดือน ไฮไลต์วันที่จะได้รับกิจกรรม (สัปดาห์เริ่มวันอาทิตย์) แตะทีละวันเพื่อเอาออก/ใส่กลับ
+ *  - ได้รับ: พื้นน้ำเงิน ตัวหนา
+ *  - เอาออกแล้ว: ขอบเส้น ตัวเลขขีดฆ่า
+ *  - แตะได้แต่ยังไม่ได้รับ: ตัวเลขสีจาง
+ */
 @Composable
-private fun MonthPreview(month: YearMonth, hits: Set<LocalDate>) {
+private fun MonthPreview(
+    month: YearMonth,
+    marks: List<Pair<androidx.compose.ui.graphics.vector.ImageVector, Color>>,
+    hits: Set<LocalDate>,
+    excluded: Set<LocalDate>,
+    canTap: (LocalDate) -> Boolean,
+    onPrev: (() -> Unit)?,
+    onNext: (() -> Unit)?,
+    onTap: (LocalDate) -> Unit
+) {
     val c = AppTheme.colors
-    Text(
-        "${Recurrence.monthLabelsTh[month.monthValue - 1]} ${month.year + 543}",
-        style = MaterialTheme.typography.titleSmall,
-        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
-    )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "${Recurrence.monthLabelsTh[month.monthValue - 1]} ${month.year + 543}",
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.weight(1f).padding(start = 4.dp)
+        )
+        IconButton(onClick = { onPrev?.invoke() }, enabled = onPrev != null) {
+            Icon(Icons.Filled.ChevronLeft, contentDescription = "เดือนก่อน", tint = if (onPrev != null) c.ink else c.line)
+        }
+        IconButton(onClick = { onNext?.invoke() }, enabled = onNext != null) {
+            Icon(Icons.Filled.ChevronRight, contentDescription = "เดือนถัดไป", tint = if (onNext != null) c.ink else c.line)
+        }
+    }
     Row {
         Recurrence.dayCodes.forEach { code ->
             Text(
@@ -287,23 +380,56 @@ private fun MonthPreview(month: YearMonth, hits: Set<LocalDate>) {
             for (col in 0..6) {
                 val dayNum = week * 7 + col - lead + 1
                 val inMonth = dayNum in 1..month.lengthOfMonth()
-                val hit = inMonth && month.atDay(dayNum) in hits
+                val date = if (inMonth) month.atDay(dayNum) else null
+                val hit = date != null && date in hits
+                val out = date != null && date in excluded
+                val tappable = date != null && canTap(date)
+                val bg by animateColorAsState(if (hit) c.workBg else Color.Transparent, tween(160), label = "bg")
                 Box(
                     Modifier
                         .weight(1f)
-                        .height(32.dp)
-                        .padding(horizontal = 2.dp)
-                        .clip(RoundedCornerShape(9.dp))
-                        .background(if (hit) c.workBg else Color.Transparent),
+                        .height(if (marks.isEmpty()) 44.dp else 52.dp)
+                        .padding(2.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(bg)
+                        .then(if (out) Modifier.border(1.5.dp, c.outline, RoundedCornerShape(10.dp)) else Modifier)
+                        .then(
+                            if (tappable && date != null) Modifier.toggleable(
+                                value = hit, role = Role.Checkbox, onValueChange = { onTap(date) }
+                            ).semantics {
+                                contentDescription = "${date.dayOfMonth} ${Recurrence.monthLabelsTh[date.monthValue - 1]}"
+                                stateDescription = when { hit -> "ได้รับกิจกรรม"; out -> "เอาออกแล้ว"; else -> "ไม่ได้รับ" }
+                            } else Modifier
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     if (inMonth) {
-                        Text(
-                            "$dayNum",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = if (hit) FontWeight.SemiBold else FontWeight.Normal,
-                            color = if (hit) c.work else c.muted.copy(alpha = 0.6f)
-                        )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                "$dayNum",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = if (hit) FontWeight.SemiBold else FontWeight.Normal,
+                                textDecoration = if (out) TextDecoration.LineThrough else null,
+                                color = when {
+                                    hit -> c.work
+                                    out -> c.muted
+                                    tappable -> c.muted
+                                    else -> c.muted.copy(alpha = 0.45f)
+                                }
+                            )
+                            // ตัวอย่างไอคอนกิจกรรมในวันที่ได้รับ (พอที่ 2 ไอคอน เกินนั้นแสดง +n)
+                            if (hit && marks.isNotEmpty()) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(1.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    val show = if (marks.size > 2) marks.take(1) else marks
+                                    show.forEach { (icon, tint) ->
+                                        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(12.dp))
+                                    }
+                                    if (marks.size > 2) {
+                                        Text("+${marks.size - 1}", fontSize = 9.sp, color = c.work, maxLines = 1)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
