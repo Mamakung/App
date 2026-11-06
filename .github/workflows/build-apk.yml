@@ -40,12 +40,20 @@ jobs:
       - name: Restore signing key
         env:
           SIGNING_KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
         run: |
           if [ -z "$SIGNING_KEYSTORE_B64" ]; then
             echo "::warning title=ยังไม่ได้ตั้ง secret SIGNING_KEYSTORE_B64::build ทดสอบได้ แต่จะไม่ปล่อย Release จนกว่าจะเพิ่ม secret (Settings > Secrets and variables > Actions)"
             echo "SIGNED=false" >> "$GITHUB_ENV"
           else
-            echo "$SIGNING_KEYSTORE_B64" | base64 -d > app/release.keystore
+            CLEAN=$(printf '%s' "$SIGNING_KEYSTORE_B64" | tr -d ' \r\n\t')
+            echo "secret มีความยาว ${#CLEAN} ตัวอักษร (ไฟล์ SIGNING_KEYSTORE_B64.txt ที่ถูกต้องยาว 5772)"
+            printf '%s' "$CLEAN" | base64 -d > app/release.keystore 2>/dev/null || true
+            if ! keytool -list -keystore app/release.keystore -storepass "${SIGNING_STORE_PASSWORD:-smartscheduler}" -alias smartscheduler >/dev/null 2>&1; then
+              echo "::error title=secret SIGNING_KEYSTORE_B64 ไม่ครบหรือไม่ถูกต้อง::ได้รับ ${#CLEAN} ตัวอักษร ต้องเป็น 5772 ตัวอักษร ขึ้นต้น MIIQ5AIBAzCCEI4G ลงท้าย nk0Rd25azzY9QgICJxA= ให้แก้ secret แล้ววางข้อความทั้งหมดจากไฟล์ SIGNING_KEYSTORE_B64.txt ใหม่"
+              exit 1
+            fi
+            echo "กุญแจเซ็นแอปถูกต้อง"
             echo "SIGNED=true" >> "$GITHUB_ENV"
           fi
 
