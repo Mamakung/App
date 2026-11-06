@@ -439,6 +439,48 @@ private fun PeriodNav(
 // Month view
 // ============================================================================
 
+private const val StackIcon = 14
+private const val StackStep = 4
+private const val StackMaxLayers = 3
+
+/** กว้างของหนึ่งกอง (dp) */
+private fun stackWidth(layers: Int) = StackIcon + (minOf(layers, StackMaxLayers) - 1) * StackStep
+
+/** กี่กองที่ใส่ในช่องกว้าง [budget] dp ได้ (เว้นที่ให้ "+n" ถ้าใส่ไม่หมด) */
+private fun fitStacks(layerCounts: List<Int>, budget: Int): Int {
+    var used = 0
+    layerCounts.forEachIndexed { i, n ->
+        val w = stackWidth(n) + if (i > 0) 2 else 0
+        val reserve = if (i < layerCounts.lastIndex) 14 else 0
+        if (used + w + reserve > budget && i > 0) return i
+        used += w
+    }
+    return layerCounts.size
+}
+
+/**
+ * ไอคอนเดียวกันซ้อนเป็นชั้น ชั้นละสี (สูงสุด 3 ชั้น) ชั้นแรกอยู่หน้าสุด ชั้นถัดไปเลื่อนไปทางขวา
+ * แต่ละชั้นมีขอบสีพื้น ([halo]) ให้เห็นรอยต่อระหว่างชั้น
+ */
+@Composable
+private fun StackedIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, colors: List<Color>, layers: Int, halo: Color) {
+    val n = minOf(layers, StackMaxLayers)
+    Box(Modifier.width(stackWidth(n).dp).height(StackIcon.dp)) {
+        for (i in (n - 1) downTo 0) {
+            val tint = colors.getOrElse(i) { colors.last() }
+            val x = (i * StackStep).dp
+            // ขอบ: วาดไอคอนสีพื้นเลื่อนรอบตัว 1dp ก่อน แล้วค่อยวาดไอคอนสีจริงทับ
+            if (i < n - 1 || n > 1) {
+                for ((dx, dy) in listOf(-1 to 0, 1 to 0, 0 to -1, 0 to 1, -1 to -1, 1 to 1, -1 to 1, 1 to -1)) {
+                    Icon(icon, contentDescription = null, tint = halo,
+                        modifier = Modifier.offset(x = x + dx.dp, y = dy.dp).size(StackIcon.dp))
+                }
+            }
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.offset(x = x).size(StackIcon.dp))
+        }
+    }
+}
+
 private val kindOrder = listOf(TaskKind.CLASS, TaskKind.WORK, TaskKind.BREAK, TaskKind.TASK)
 
 @Composable
@@ -469,8 +511,11 @@ private fun MonthGrid(
                     val d = first.plusDays((week * 7 + col).toLong())
                     val inMonth = d.month == anchor.month
                     val tasks = days[d]?.tasks.orEmpty()
-                    // ไอคอนใต้วันที่: หนึ่งไอคอนต่อแบบที่ใช้ (ไอคอน + สีของกิจกรรม/หมวด/ประเภท) เรียงตามเวลา
-                    val marks = tasks.sortedBy { it.startMin }.map { it.iconVector() to it.accent() }.distinct()
+                    // ไอคอนใต้วันที่: ไอคอนเดียวกันรวมเป็นกอง แต่ละชั้นคือหนึ่งสี เรียงตามเวลา
+                    val marks = tasks.sortedBy { it.startMin }
+                        .map { it.iconVector() to it.accent() }
+                        .groupBy({ it.first }, { it.second })
+                        .map { (icon, colors) -> icon to colors.distinct() }
                     val kindsUsed = kindOrder.filter { k -> tasks.any { it.kind == k.code } }
                     val isSel = d == selected
                     val cellBg by animateColorAsState(if (isSel) c.ink else Color.Transparent, tween(150), label = "cellBg")
@@ -506,23 +551,24 @@ private fun MonthGrid(
                             )
                         }
                         Spacer(Modifier.height(4.dp))
-                        // พอที่ 3 ไอคอน ถ้ามีมากกว่านั้นแสดง 2 ไอคอน + จำนวนที่เหลือ
+                        // กองไอคอนเรียงในช่อง ถ้าไม่พอที่แสดง "+จำนวนกองที่เหลือ"
+                        val fit = fitStacks(marks.map { it.second.size }, budget = 40)
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(2.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.height(14.dp)
+                            modifier = Modifier.height(16.dp)
                         ) {
-                            val shown = if (marks.size > 3) marks.take(2) else marks
-                            shown.forEach { (icon, accent) ->
-                                Icon(
-                                    icon, contentDescription = null,
-                                    tint = if (isSel) c.ground else accent,
-                                    modifier = Modifier.size(13.dp)
+                            marks.take(fit).forEach { (icon, colors) ->
+                                StackedIcon(
+                                    icon = icon,
+                                    colors = if (isSel) listOf(c.ground) else colors,
+                                    layers = colors.size,
+                                    halo = if (isSel) c.ink else c.ground
                                 )
                             }
-                            if (marks.size > 3) {
+                            if (fit < marks.size) {
                                 Text(
-                                    "+${marks.size - 2}",
+                                    "+${marks.size - fit}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = if (isSel) c.ground else c.muted,
                                     maxLines = 1
