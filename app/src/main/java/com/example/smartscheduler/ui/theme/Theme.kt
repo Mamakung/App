@@ -113,26 +113,43 @@ object TaskPalette {
         Swatch("gray", "เทา", Color(0xFF56625E) to Color(0xFFECEFEE), Color(0xFFB5C0BC) to Color(0xFF29322F))
     )
 
-    fun find(key: String?): Swatch? = key?.let { k -> swatches.firstOrNull { it.key == k } }
+    /*
+     * รูปแบบที่เก็บ: "<สี>" หรือ "<สี>~<ความเข้ม>"
+     *   <สี> = ชื่อสีใน swatches หรือ "h<องศา>" จากแถบสี
+     *   <ความเข้ม> = 0..100 (50 = ปกติ, มาก = สดและเข้มขึ้น, น้อย = จางลง)
+     */
+    const val DEFAULT_STRENGTH = 50
+
+    fun baseOf(key: String?): String? = key?.substringBefore('~')
+    fun strengthOf(key: String?): Int = key?.substringAfter('~', "")?.toIntOrNull()?.coerceIn(0, 100) ?: DEFAULT_STRENGTH
+    fun withStrength(base: String?, strength: Int): String? =
+        base?.let { if (strength == DEFAULT_STRENGTH) it else "$it~${strength.coerceIn(0, 100)}" }
+
+    fun find(key: String?): Swatch? = baseOf(key)?.let { k -> swatches.firstOrNull { it.key == k } }
 
     // ---------- สีที่เลือกเองจากแถบสี เก็บเป็น "h<องศา>" เช่น "h210" ----------
 
     fun hueKey(hue: Int): String = "h${hue.coerceIn(0, 359)}"
-    fun hueOf(key: String?): Int? = key?.takeIf { it.startsWith("h") }?.drop(1)?.toIntOrNull()?.coerceIn(0, 359)
+    fun hueOf(key: String?): Int? =
+        baseOf(key)?.takeIf { it.startsWith("h") }?.drop(1)?.toIntOrNull()?.coerceIn(0, 359)
 
     private val white = android.graphics.Color.WHITE
     private val darkSurface = 0xFF19231F.toInt()
 
-    /**
-     * คู่สี (เข้ม, อ่อน) ของสีที่เลือก หรือ null ถ้าไม่ได้เลือก
-     * สีจากแถบสี: ปรับความสว่างเองจนตัดกับพื้น ≥ 4.5:1 (สีเหลือง/เขียวอ่อนจึงออกมาเข้มขึ้นในโหมดสว่าง)
-     */
     private val cache = java.util.concurrent.ConcurrentHashMap<String, Pair<Color, Color>>()
 
+    /**
+     * คู่สี (เข้ม, อ่อน) ของสีที่เลือก หรือ null ถ้าไม่ได้เลือก
+     * ปรับตามความเข้มที่เลือก แล้วตรวจให้สีหลักยังตัดกับพื้น ≥ 3:1 (ไอคอน/เส้นมองเห็นชัด)
+     */
     fun resolve(key: String?, dark: Boolean): Pair<Color, Color>? {
-        find(key)?.let { return if (dark) it.dark else it.light }
-        val hue = hueOf(key) ?: return null
-        return cache.getOrPut("$hue-$dark") { computeHue(hue.toFloat(), dark) }
+        val base = baseOf(key) ?: return null
+        if (find(base) == null && hueOf(base) == null) return null
+        val strength = strengthOf(key)
+        return cache.getOrPut("$base~$strength-$dark") {
+            val pair = find(base)?.let { if (dark) it.dark else it.light } ?: computeHue(hueOf(base)!!.toFloat(), dark)
+            if (strength == DEFAULT_STRENGTH) pair else applyStrength(pair, strength, dark)
+        }
     }
 
     private fun computeHue(hue: Float, dark: Boolean): Pair<Color, Color> =
@@ -145,6 +162,30 @@ object TaskPalette {
             while (l > 0.15f && ColorUtils.calculateContrast(hsl(hue, 0.65f, l), white) < 4.5) l -= 0.02f
             Color(hsl(hue, 0.65f, l)) to Color(hsl(hue, 0.7f, 0.93f))
         }
+
+    /** t = -1 (จางสุด) .. +1 (เข้มสุด) */
+    private fun applyStrength(pair: Pair<Color, Color>, strength: Int, dark: Boolean): Pair<Color, Color> {
+        val t = (strength - DEFAULT_STRENGTH) / 50f
+        val a = toHsl(pair.first)
+        val f = toHsl(pair.second)
+        // สีหลัก: เข้มขึ้น = อิ่มตัวขึ้นและเข้าใกล้ความสว่างกลาง (สด) / จางลง = อิ่มตัวน้อยลง
+        a[1] = if (t > 0) a[1] + (1f - a[1]) * t * 0.9f else a[1] * (1f + t * 0.75f)
+        a[2] = if (dark) a[2] - t * 0.14f else a[2] + if (t > 0) -t * 0.06f else -t * 0.1f
+        a[2] = a[2].coerceIn(0.12f, 0.92f)
+        // ให้ยังมองเห็นบนพื้น (≥ 3:1)
+        val bg = if (dark) darkSurface else white
+        var guard = 0
+        while (ColorUtils.calculateContrast(ColorUtils.HSLToColor(a), bg) < 3.0 && guard++ < 40) {
+            a[2] = (a[2] + if (dark) 0.02f else -0.02f).coerceIn(0f, 1f)
+        }
+        // พื้นอ่อน: เข้มขึ้น = สีชัดขึ้น / จางลง = ใกล้สีพื้น
+        f[1] = (f[1] * (1f + t * 0.6f)).coerceIn(0f, 1f)
+        f[2] = if (dark) (f[2] + t * 0.07f).coerceIn(0.08f, 0.32f) else (f[2] - t * 0.06f).coerceIn(0.82f, 0.97f)
+        return Color(ColorUtils.HSLToColor(a)) to Color(ColorUtils.HSLToColor(f))
+    }
+
+    private fun toHsl(c: Color): FloatArray =
+        FloatArray(3).also { ColorUtils.colorToHSL(android.graphics.Color.argb(255, (c.red * 255).toInt(), (c.green * 255).toInt(), (c.blue * 255).toInt()), it) }
 
     /** สีสดเต็มที่ของแต่ละองศา ใช้วาดแถบสี */
     fun pure(hue: Float): Color = Color(hsl(hue, 0.85f, 0.55f))

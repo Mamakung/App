@@ -17,6 +17,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.material.icons.automirrored.filled.DirectionsRun
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -41,6 +46,19 @@ import javax.inject.Inject
 // ============================================================================
 // Icons ที่เลือกได้
 // ============================================================================
+
+/** รองเท้าวิ่ง (Material ไม่มีไอคอนรองเท้า จึงวาดเอง ขนาด 24×24 รูเชือกเป็นช่องว่าง) */
+private val Sneaker: ImageVector by lazy {
+    ImageVector.Builder(name = "Sneaker", defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
+        .addPath(
+            pathData = PathParser().parsePathString(
+                "M2.5 15.5V9.6c0-.6.5-1.1 1.1-1.1h1.6c.5 0 .9.3 1.1.7l.5 1.1c.3.6.9 1 1.6 1h.4c.6 0 1.1-.3 1.4-.8l1.2-2c.3-.5.9-.7 1.4-.4l7.6 4.1c1.4.7 2.3 2.1 2.3 3.7v-.4zM2.5 16.8h19v1.1c0 .7-.6 1.3-1.3 1.3H3.8c-.7 0-1.3-.6-1.3-1.3v-1.1zM11.9 10.7L13.1 9.3L13.9 9.9L12.7 11.3zM14.0 11.8L15.2 10.4L16.0 11.0L14.8 12.4zM16.1 12.9L17.3 11.5L18.1 12.1L16.9 13.5z"
+            ).toNodes(),
+            pathFillType = PathFillType.EvenOdd,
+            fill = SolidColor(Color.Black)
+        )
+        .build()
+}
 
 object TaskIcons {
     data class Item(val key: String, val label: String, val vector: ImageVector)
@@ -67,6 +85,9 @@ object TaskIcons {
         Item("sleep", "นอน", Icons.Filled.Bedtime),
         Item("mind", "ทำสมาธิ", Icons.Filled.SelfImprovement),
         Item("gym", "ออกกำลังกาย", Icons.Filled.FitnessCenter),
+        Item("run", "วิ่ง", Icons.AutoMirrored.Filled.DirectionsRun),
+        Item("shoe", "รองเท้าวิ่ง", Sneaker),
+        Item("walk", "เดิน", Icons.AutoMirrored.Filled.DirectionsWalk),
         Item("soccer", "กีฬา", Icons.Filled.SportsSoccer),
         Item("game", "เล่นเกม", Icons.Filled.SportsEsports),
         Item("music", "ดนตรี", Icons.Filled.MusicNote),

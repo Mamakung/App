@@ -687,23 +687,31 @@ fun ColorPicker(kind: TaskKind, selected: String?, categoryId: Long? = null, onS
     val dark = c.dark
     val baseAccent = taskAccent(kind, null, categoryId)
     val baseIcon = taskIcon(kind, null, categoryId)
+    val base = TaskPalette.baseOf(selected)
+    val strength = TaskPalette.strengthOf(selected)
+    // วงสีแสดงตามความเข้มที่ตั้งอยู่ จะได้เห็นสีจริงก่อนเลือก
     val items: List<Triple<String?, String, Color>> =
         listOf(Triple(null, "ตาม${taskLabel(kind, categoryId)}", baseAccent)) +
-            TaskPalette.swatches.map { Triple(it.key, it.label, if (dark) it.dark.first else it.light.first) }
+            TaskPalette.swatches.map {
+                Triple(it.key, it.label, TaskPalette.resolve(TaskPalette.withStrength(it.key, strength), dark)!!.first)
+            }
     FlowRow(
         Modifier.fillMaxWidth().selectableGroup(),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         items.forEach { (key, label, color) ->
-            val isSel = key == selected
+            val isSel = key == base
             // ตัวที่เลือก: มีกรอบรอบนอก (ไม่เปลี่ยนสีพื้น) + เครื่องหมายถูกบนวงสี
             Box(
                 Modifier
                     .size(48.dp)
                     .clip(CircleShape)
                     .border(2.dp, if (isSel) c.ink else Color.Transparent, CircleShape)
-                    .selectable(selected = isSel, role = Role.RadioButton, onClick = { onSelect(key) })
+                    .selectable(
+                        selected = isSel, role = Role.RadioButton,
+                        onClick = { onSelect(TaskPalette.withStrength(key, strength)) }
+                    )
                     .semantics { contentDescription = "สี$label" },
                 contentAlignment = Alignment.Center
             ) {
@@ -725,12 +733,54 @@ fun ColorPicker(kind: TaskKind, selected: String?, categoryId: Long? = null, onS
             }
         }
     }
-    Hint("หรือลากเลือกสีเองจากแถบ แอปปรับความเข้มให้อ่านง่าย")
+    Hint("หรือลากเลือกสีเองจากแถบ")
     HueBar(
         hue = TaskPalette.hueOf(selected),
+        strength = strength,
         dark = dark,
-        onChange = { onSelect(TaskPalette.hueKey(it)) }
+        onChange = { onSelect(TaskPalette.withStrength(TaskPalette.hueKey(it), strength)) }
     )
+    StrengthSlider(
+        strength = strength,
+        enabled = base != null,
+        accent = TaskPalette.resolve(selected, dark)?.first ?: baseAccent,
+        onChange = { onSelect(TaskPalette.withStrength(base, it)) }
+    )
+}
+
+/** ปรับความเข้ม/จางของสีที่เลือก 0–100 (50 = ปกติ) ทีละ 10 */
+@Composable
+private fun StrengthSlider(strength: Int, enabled: Boolean, accent: Color, onChange: (Int) -> Unit) {
+    val c = AppTheme.colors
+    val word = when {
+        strength <= 20 -> "จางมาก"
+        strength < 50 -> "จาง"
+        strength == 50 -> "ปกติ"
+        strength < 80 -> "เข้ม"
+        else -> "เข้มมาก"
+    }
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("ความเข้มของสี", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            Text(if (enabled) word else "", style = MaterialTheme.typography.bodyMedium, color = c.muted)
+        }
+        Slider(
+            value = strength.toFloat(),
+            onValueChange = { onChange(((it / 10f).roundToInt() * 10)) },
+            valueRange = 0f..100f,
+            steps = 9,
+            enabled = enabled,
+            colors = SliderDefaults.colors(
+                thumbColor = accent,
+                activeTrackColor = accent,
+                inactiveTrackColor = c.line,
+                activeTickColor = c.surface.copy(alpha = 0.6f),
+                inactiveTickColor = c.muted.copy(alpha = 0.5f)
+            ),
+            modifier = Modifier.fillMaxWidth().semantics { stateDescription = word }
+        )
+        if (!enabled) Hint("เลือกสีด้านบนก่อน แล้วปรับให้เข้มหรือจางได้")
+    }
 }
 
 /**
@@ -738,15 +788,17 @@ fun ColorPicker(kind: TaskKind, selected: String?, categoryId: Long? = null, onS
  * สูง 48dp ให้กดง่าย ตัวเลื่อนแสดงสีจริงที่จะใช้ โปรแกรมอ่านหน้าจอปรับค่าได้
  */
 @Composable
-private fun HueBar(hue: Int?, dark: Boolean, onChange: (Int) -> Unit) {
+private fun HueBar(hue: Int?, strength: Int, dark: Boolean, onChange: (Int) -> Unit) {
     val c = AppTheme.colors
     var widthPx by remember { mutableStateOf(1) }
     val density = LocalDensity.current
     val thumb = 32.dp
     val thumbPx = with(density) { thumb.toPx() }
     // วาดแถบด้วยสีที่จะได้จริง (หลังปรับความเข้ม) จุดไหนบนแถบ = สีที่ได้ตรงนั้น
-    val rainbow = remember(dark) {
-        Brush.horizontalGradient((0..36).map { TaskPalette.resolve(TaskPalette.hueKey(it * 10), dark)!!.first })
+    val rainbow = remember(dark, strength) {
+        Brush.horizontalGradient((0..36).map {
+            TaskPalette.resolve(TaskPalette.withStrength(TaskPalette.hueKey(it * 10), strength), dark)!!.first
+        })
     }
     val latest by rememberUpdatedState(onChange)
 
@@ -789,7 +841,7 @@ private fun HueBar(hue: Int?, dark: Boolean, onChange: (Int) -> Unit) {
         if (hue != null) {
             val usable = (widthPx - thumbPx).coerceAtLeast(0f)
             val x = with(density) { (usable * hue / 359f).toDp() }
-            val chosen = TaskPalette.resolve(TaskPalette.hueKey(hue), dark)?.first ?: c.ink
+            val chosen = TaskPalette.resolve(TaskPalette.withStrength(TaskPalette.hueKey(hue), strength), dark)?.first ?: c.ink
             Box(
                 Modifier
                     .offset(x = x)
