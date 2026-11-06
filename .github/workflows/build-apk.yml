@@ -40,13 +40,16 @@ jobs:
       - name: Restore signing key
         env:
           SIGNING_KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
+          SIGNING_KEYSTORE_B64_2: ${{ secrets.SIGNING_KEYSTORE_B64_2 }}
+          SIGNING_KEYSTORE_B64_3: ${{ secrets.SIGNING_KEYSTORE_B64_3 }}
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
         run: |
           if [ -z "$SIGNING_KEYSTORE_B64" ]; then
             echo "::warning title=ยังไม่ได้ตั้ง secret SIGNING_KEYSTORE_B64::build ทดสอบได้ แต่จะไม่ปล่อย Release จนกว่าจะเพิ่ม secret (Settings > Secrets and variables > Actions)"
             echo "SIGNED=false" >> "$GITHUB_ENV"
           else
-            CLEAN=$(printf '%s' "$SIGNING_KEYSTORE_B64" | tr -d ' \r\n\t')
+            # secret ยาวได้ทีละ ~2000 ตัวเมื่อวางจากมือถือ จึงรองรับการแบ่งเป็น 3 ส่วน (_2, _3 ไม่บังคับ)
+            CLEAN=$(printf '%s%s%s' "$SIGNING_KEYSTORE_B64" "$SIGNING_KEYSTORE_B64_2" "$SIGNING_KEYSTORE_B64_3" | tr -d ' \r\n\t')
             echo "secret มีความยาว ${#CLEAN} ตัวอักษร (ไฟล์ SIGNING_KEYSTORE_B64.txt ที่ถูกต้องยาว 5772)"
             printf '%s' "$CLEAN" | base64 -d > app/release.keystore 2>/dev/null || true
             if ! keytool -list -keystore app/release.keystore -storepass "${SIGNING_STORE_PASSWORD:-smartscheduler}" -alias smartscheduler >/dev/null 2>&1; then
