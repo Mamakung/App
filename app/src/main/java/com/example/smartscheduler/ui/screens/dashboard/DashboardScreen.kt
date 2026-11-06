@@ -469,13 +469,13 @@ private fun MonthGrid(
                     val d = first.plusDays((week * 7 + col).toLong())
                     val inMonth = d.month == anchor.month
                     val tasks = days[d]?.tasks.orEmpty()
-                    // จุดสีใต้วันที่: หนึ่งจุดต่อสีที่ใช้ (สีที่เลือกเอง หรือสีตามประเภท)
-                    val dots = tasks.sortedBy { t -> kindOrder.indexOfFirst { it.code == t.kind } }
-                        .map { Triple(TaskKind.from(it.kind), it.color, it.categoryId) }.distinct()
+                    // ไอคอนใต้วันที่: หนึ่งไอคอนต่อแบบที่ใช้ (ไอคอน + สีของกิจกรรม/หมวด/ประเภท) เรียงตามเวลา
+                    val marks = tasks.sortedBy { it.startMin }.map { it.iconVector() to it.accent() }.distinct()
+                    val kindsUsed = kindOrder.filter { k -> tasks.any { it.kind == k.code } }
                     val isSel = d == selected
                     val cellBg by animateColorAsState(if (isSel) c.ink else Color.Transparent, tween(150), label = "cellBg")
                     val summary = if (tasks.isEmpty()) "ว่าง"
-                        else "${tasks.size} รายการ " + dots.map { it.first }.distinct().joinToString(" ") { it.label }
+                        else "${tasks.size} รายการ " + kindsUsed.joinToString(" ") { it.label }
                     Column(
                         Modifier
                             .weight(1f)
@@ -506,13 +506,26 @@ private fun MonthGrid(
                             )
                         }
                         Spacer(Modifier.height(4.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.height(6.dp)) {
-                            dots.take(3).forEach { (k, col, cat) ->
-                                Box(
-                                    Modifier
-                                        .size(6.dp)
-                                        .clip(CircleShape)
-                                        .background(if (isSel) c.ground else taskAccent(k, col, cat))
+                        // พอที่ 3 ไอคอน ถ้ามีมากกว่านั้นแสดง 2 ไอคอน + จำนวนที่เหลือ
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.height(14.dp)
+                        ) {
+                            val shown = if (marks.size > 3) marks.take(2) else marks
+                            shown.forEach { (icon, accent) ->
+                                Icon(
+                                    icon, contentDescription = null,
+                                    tint = if (isSel) c.ground else accent,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                            }
+                            if (marks.size > 3) {
+                                Text(
+                                    "+${marks.size - 2}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isSel) c.ground else c.muted,
+                                    maxLines = 1
                                 )
                             }
                         }
@@ -523,8 +536,8 @@ private fun MonthGrid(
         Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             kindOrder.forEach { k ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(8.dp).clip(CircleShape).background(k.color()))
-                    Spacer(Modifier.width(5.dp))
+                    Icon(k.icon(), contentDescription = null, tint = k.color(), modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(4.dp))
                     Hint(k.label)
                 }
             }
