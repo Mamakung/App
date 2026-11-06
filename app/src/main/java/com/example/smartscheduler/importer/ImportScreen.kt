@@ -198,9 +198,18 @@ class ImportViewModel @Inject constructor(
     fun dismissError() = _state.update { it.copy(error = null) }
     fun restart() = _state.update { freshState() }
 
+    /** แก้รายการเดียว ส่วนสีใช้กับทุกคาบของวิชาเดียวกัน (เหมือนในปฏิทิน) */
     fun updateEntry(old: TimetableEntry, draft: TaskDraft) = _state.update { s ->
+        val colorChanged = draft.color != old.color
         s.copy(entries = s.entries.map {
-            if (it === old) it.copy(title = draft.title.trim(), startMin = draft.startMin, endMin = draft.endMin, kind = draft.kind) else it
+            when {
+                it === old -> it.copy(
+                    title = draft.title.trim(), startMin = draft.startMin, endMin = draft.endMin,
+                    kind = draft.kind, color = draft.color
+                )
+                colorChanged && it.subjectKey() == old.subjectKey() -> it.copy(color = draft.color)
+                else -> it
+            }
         })
     }
 
@@ -224,7 +233,8 @@ class ImportViewModel @Inject constructor(
                         startMinute = e.startMin % 60,
                         durationMinutes = e.endMin - e.startMin,
                         sortOrder = 100 + i,
-                        kind = e.kind.code
+                        kind = e.kind.code,
+                        color = e.color
                     )
                 )
             }
@@ -373,6 +383,7 @@ fun ImportScreen(onBack: () -> Unit, onDone: () -> Unit, viewModel: ImportViewMo
                                         reminder = true,
                                         showDivider = i > 0,
                                         subtitle = e.detail().ifBlank { null },
+                                        color = e.color,
                                         onClick = { editing = e }
                                     )
                                 }
@@ -422,8 +433,8 @@ fun ImportScreen(onBack: () -> Unit, onDone: () -> Unit, viewModel: ImportViewMo
     editing?.let { e ->
         TaskEditorDialog(
             title = "แก้รายการ",
-            initial = TaskDraft(e.title, e.kind, e.startMin, e.endMin, true),
-            footnote = e.detail().ifBlank { null },
+            initial = TaskDraft(e.title, e.kind, e.startMin, e.endMin, true, color = e.color),
+            footnote = listOfNotNull(e.detail().ifBlank { null }, "สีเปลี่ยนให้ทุกคาบของวิชานี้").joinToString("\n"),
             onSave = { viewModel.updateEntry(e, it); editing = null },
             onDelete = { viewModel.removeEntry(e); editing = null },
             onDismiss = { editing = null }

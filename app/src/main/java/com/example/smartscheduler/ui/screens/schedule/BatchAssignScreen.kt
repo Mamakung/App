@@ -225,7 +225,7 @@ fun BatchAssignScreen(onBack: () -> Unit, viewModel: BatchAssignViewModel = hilt
                         state.tasks.forEachIndexed { i, t ->
                             TimeRow(
                                 title = t.title, kind = t.kind, startMin = t.startMin, endMin = t.endMin,
-                                reminder = t.reminder, showDivider = i > 0,
+                                reminder = t.reminder, showDivider = i > 0, color = t.color,
                                 onClick = { editing = BatchEdit(i, t.kind) }
                             )
                         }

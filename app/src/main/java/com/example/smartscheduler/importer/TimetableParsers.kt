@@ -12,7 +12,9 @@ data class TimetableEntry(
     val code: String = "",
     val room: String = "",
     val teacher: String = "",
-    val kind: TaskKind = TaskKind.CLASS
+    val kind: TaskKind = TaskKind.CLASS,
+    /** สีที่เลือกตอนตรวจก่อนบันทึก (ชื่อใน TaskPalette) null = สีตามประเภท */
+    val color: String? = null
 ) {
     /** บรรทัดรองที่แสดงใต้ชื่อ เช่น "20105-2012  ห้อง 7102  ครูต่วนมะรูดี" */
     fun detail(): String = listOfNotNull(
