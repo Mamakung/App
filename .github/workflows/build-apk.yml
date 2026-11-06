@@ -36,15 +36,18 @@ jobs:
           echo "VERSION_NAME=$(TZ=Asia/Bangkok date +%Y.%m.%d-%H%M)" >> "$GITHUB_ENV"
 
       # กุญแจเซ็นแอป: ทุกเวอร์ชันต้องใช้กุญแจเดียวกัน ไม่งั้นอัปเดตทับไม่ได้
+      # ถ้ายังไม่มี secret: ยัง build ทดสอบ (ใช้กุญแจชั่วคราว) แต่ไม่ปล่อย Release ให้แอปเห็น
       - name: Restore signing key
         env:
           SIGNING_KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
         run: |
           if [ -z "$SIGNING_KEYSTORE_B64" ]; then
-            echo "::error title=ยังไม่ได้ตั้ง secret SIGNING_KEYSTORE_B64::ไปที่ Settings > Secrets and variables > Actions แล้วเพิ่ม secret ชื่อ SIGNING_KEYSTORE_B64 (เนื้อหาจากไฟล์ SIGNING_KEYSTORE_B64.txt)"
-            exit 1
+            echo "::warning title=ยังไม่ได้ตั้ง secret SIGNING_KEYSTORE_B64::build ทดสอบได้ แต่จะไม่ปล่อย Release จนกว่าจะเพิ่ม secret (Settings > Secrets and variables > Actions)"
+            echo "SIGNED=false" >> "$GITHUB_ENV"
+          else
+            echo "$SIGNING_KEYSTORE_B64" | base64 -d > app/release.keystore
+            echo "SIGNED=true" >> "$GITHUB_ENV"
           fi
-          echo "$SIGNING_KEYSTORE_B64" | base64 -d > app/release.keystore
 
       # ไม่บังคับ: ใส่ secret GOOGLE_SERVICES_JSON เพื่อเปิดระบบล็อกอิน Firebase
       - name: Add google-services.json (optional)
@@ -83,6 +86,7 @@ jobs:
 
       # tag build-<versionCode>: แอปอ่านเลขท้าย tag มาเทียบกับเวอร์ชันของตัวเอง
       - name: Publish GitHub Release
+        if: env.SIGNED == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ env.VERSION_CODE }}
