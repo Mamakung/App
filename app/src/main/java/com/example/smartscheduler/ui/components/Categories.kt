@@ -362,12 +362,12 @@ fun IconPicker(kind: TaskKind, categoryId: Long?, selected: String?, accent: Col
 @Composable
 private fun IconCell(vector: ImageVector, label: String, selected: Boolean, accent: Color, fill: Color, onClick: () -> Unit) {
     val c = AppTheme.colors
+    // ตัวที่เลือก: กรอบรอบนอก + ไอคอนเป็นสีที่เลือก (ไม่ทาสีพื้น)
     Box(
         Modifier
             .size(48.dp)
             .clip(CircleShape)
-            .background(if (selected) fill else Color.Transparent)
-            .border(if (selected) 2.dp else 0.dp, if (selected) c.ink else Color.Transparent, CircleShape)
+            .border(2.dp, if (selected) c.ink else Color.Transparent, CircleShape)
             .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
             .semantics { contentDescription = "ไอคอน$label" },
         contentAlignment = Alignment.Center

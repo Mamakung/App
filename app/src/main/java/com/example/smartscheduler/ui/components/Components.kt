@@ -686,7 +686,6 @@ fun ColorPicker(kind: TaskKind, selected: String?, categoryId: Long? = null, onS
     val c = AppTheme.colors
     val dark = c.dark
     val baseAccent = taskAccent(kind, null, categoryId)
-    val baseFill = taskFill(kind, null, categoryId)
     val baseIcon = taskIcon(kind, null, categoryId)
     val items: List<Triple<String?, String, Color>> =
         listOf(Triple(null, "ตาม${taskLabel(kind, categoryId)}", baseAccent)) +
@@ -698,10 +697,12 @@ fun ColorPicker(kind: TaskKind, selected: String?, categoryId: Long? = null, onS
     ) {
         items.forEach { (key, label, color) ->
             val isSel = key == selected
+            // ตัวที่เลือก: มีกรอบรอบนอก (ไม่เปลี่ยนสีพื้น) + เครื่องหมายถูกบนวงสี
             Box(
                 Modifier
                     .size(48.dp)
                     .clip(CircleShape)
+                    .border(2.dp, if (isSel) c.ink else Color.Transparent, CircleShape)
                     .selectable(selected = isSel, role = Role.RadioButton, onClick = { onSelect(key) })
                     .semantics { contentDescription = "สี$label" },
                 contentAlignment = Alignment.Center
@@ -710,17 +711,15 @@ fun ColorPicker(kind: TaskKind, selected: String?, categoryId: Long? = null, onS
                     Modifier
                         .size(36.dp)
                         .clip(CircleShape)
-                        .background(if (key == null) baseFill else color)
-                        .border(if (isSel) 3.dp else 0.dp, if (isSel) c.ink else Color.Transparent, CircleShape)
-                        .then(if (key == null) Modifier.border(2.dp, color, CircleShape) else Modifier),
+                        .then(
+                            if (key == null) Modifier.border(2.dp, color, CircleShape)
+                            else Modifier.background(color)
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     when {
-                        isSel -> Icon(
-                            Icons.Filled.Check, contentDescription = null,
-                            tint = if (key == null) color else c.surface, modifier = Modifier.size(20.dp)
-                        )
                         key == null -> Icon(baseIcon, contentDescription = null, tint = color, modifier = Modifier.size(18.dp))
+                        isSel -> Icon(Icons.Filled.Check, contentDescription = null, tint = c.surface, modifier = Modifier.size(20.dp))
                     }
                 }
             }
@@ -745,7 +744,10 @@ private fun HueBar(hue: Int?, dark: Boolean, onChange: (Int) -> Unit) {
     val density = LocalDensity.current
     val thumb = 32.dp
     val thumbPx = with(density) { thumb.toPx() }
-    val rainbow = remember { Brush.horizontalGradient((0..12).map { TaskPalette.pure(it * 30f) }) }
+    // วาดแถบด้วยสีที่จะได้จริง (หลังปรับความเข้ม) จุดไหนบนแถบ = สีที่ได้ตรงนั้น
+    val rainbow = remember(dark) {
+        Brush.horizontalGradient((0..36).map { TaskPalette.resolve(TaskPalette.hueKey(it * 10), dark)!!.first })
+    }
     val latest by rememberUpdatedState(onChange)
 
     fun hueAt(x: Float): Int {
