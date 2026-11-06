@@ -155,7 +155,7 @@ fun RoutineScreen(
             }
 
             val wake = template.wakeUpHour * 60 + template.wakeUpMinute
-            val blocks = state.tasks.map { TimeBlock(it.startMin, it.endMin, TaskKind.from(it.kind)) }
+            val blocks = state.tasks.map { TimeBlock(it.startMin, it.endMin, TaskKind.from(it.kind), it.color) }
 
             item {
                 Panel {
@@ -214,6 +214,7 @@ fun RoutineScreen(
                                 reminder = t.reminderEnabled,
                                 showDivider = i > 0,
                                 subtitle = "ทำซ้ำ $repeat",
+                                color = t.color,
                                 onClick = { editing = RoutineEdit(t, TaskKind.from(t.kind)) }
                             )
                         } else {
@@ -239,6 +240,7 @@ fun RoutineScreen(
                                         reminder = t.reminderEnabled,
                                         showDivider = false,
                                         subtitle = "ทำซ้ำ $repeat",
+                                        color = t.color,
                                         onClick = null
                                     )
                                 }

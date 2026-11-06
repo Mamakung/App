@@ -58,5 +58,7 @@ data class RoutineTemplateTaskEntity(
     /** วันที่รายการนี้ทำซ้ำ (CSV เช่น "MON,WED") null = ใช้ค่าเริ่มต้นของกิจวัตร */
     val repeatDays: String? = null,
     /** เดือนที่รายการนี้ทำซ้ำ (CSV เช่น "1,2,3") null = ใช้ค่าเริ่มต้นของกิจวัตร */
-    val repeatMonths: String? = null
+    val repeatMonths: String? = null,
+    /** สีที่ผู้ใช้เลือก (ชื่อใน TaskPalette) null = สีตามประเภท */
+    val color: String? = null
 )

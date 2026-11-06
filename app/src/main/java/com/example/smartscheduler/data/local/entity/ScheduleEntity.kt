@@ -54,7 +54,9 @@ data class ScheduleTaskEntity(
     val kind: String = "TASK", // WORK / BREAK / TASK
     val originTemplateTaskId: Long? = null, // link back to template task, null if manually inserted
     /** ชุดที่นำเข้าจากไฟล์ตาราง (null = เพิ่มเองหรือมาจากกิจวัตร) ใช้ลบหรือแทนที่ทั้งชุด */
-    val importBatchId: String? = null
+    val importBatchId: String? = null,
+    /** สีที่ผู้ใช้เลือก (ชื่อใน TaskPalette เช่น "teal") null = สีตามประเภท */
+    val color: String? = null
 )
 
 /**

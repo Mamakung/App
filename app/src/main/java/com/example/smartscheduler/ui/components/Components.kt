@@ -9,6 +9,9 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.example.smartscheduler.ui.theme.TaskPalette
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -53,11 +56,13 @@ data class TaskDraft(
     val reminder: Boolean = true,
     /** ใช้กับกิจวัตรเท่านั้น: null = ไม่แสดงตัวเลือกวันทำซ้ำในหน้าต่างแก้ไข */
     val repeatDays: Set<String>? = null,
-    val repeatMonths: Set<Int>? = null
+    val repeatMonths: Set<Int>? = null,
+    /** สีที่เลือก (ชื่อใน TaskPalette) null = สีตามประเภท */
+    val color: String? = null
 )
 
 /** ช่วงเวลาแบบย่อ ใช้วาดเส้นเวลา/แถบวัน */
-data class TimeBlock(val startMin: Int, val endMin: Int, val kind: TaskKind)
+data class TimeBlock(val startMin: Int, val endMin: Int, val kind: TaskKind, val color: String? = null)
 
 fun fmt(minutes: Int): String = "%02d:%02d".format((minutes / 60) % 24, minutes % 60)
 
@@ -80,8 +85,8 @@ val ScheduleTaskEntity.endMin get() = startMin + durationMinutes
 val RoutineTemplateTaskEntity.startMin get() = startHour * 60 + startMinute
 val RoutineTemplateTaskEntity.endMin get() = startMin + durationMinutes
 
-fun ScheduleTaskEntity.toDraft() = TaskDraft(title, TaskKind.from(kind), startMin, endMin, reminderEnabled)
-fun RoutineTemplateTaskEntity.toDraft() = TaskDraft(title, TaskKind.from(kind), startMin, endMin, reminderEnabled)
+fun ScheduleTaskEntity.toDraft() = TaskDraft(title, TaskKind.from(kind), startMin, endMin, reminderEnabled, color = color)
+fun RoutineTemplateTaskEntity.toDraft() = TaskDraft(title, TaskKind.from(kind), startMin, endMin, reminderEnabled, color = color)
 
 /** ฉบับสำหรับหน้ากิจวัตร: ใส่วันทำซ้ำจริงของรายการ (หรือค่าเริ่มต้นของกิจวัตร) */
 fun RoutineTemplateTaskEntity.toDraft(template: RoutineTemplateEntity) = toDraft().copy(
@@ -96,7 +101,8 @@ fun TaskDraft.toScheduleTask(base: ScheduleTaskEntity?, dayId: Long): ScheduleTa
         startMinute = startMin % 60,
         durationMinutes = endMin - startMin,
         reminderEnabled = reminder,
-        kind = kind.code
+        kind = kind.code,
+        color = color
     )
 
 fun TaskDraft.toTemplateTask(base: RoutineTemplateTaskEntity?, templateId: Long): RoutineTemplateTaskEntity =
@@ -107,6 +113,7 @@ fun TaskDraft.toTemplateTask(base: RoutineTemplateTaskEntity?, templateId: Long)
         durationMinutes = endMin - startMin,
         reminderEnabled = reminder,
         kind = kind.code,
+        color = color,
         repeatDays = repeatDays?.let { Recurrence.daysToCsv(it) } ?: base?.repeatDays,
         repeatMonths = repeatMonths?.let { Recurrence.monthsToCsv(it) } ?: base?.repeatMonths
     )
@@ -138,6 +145,22 @@ fun TaskKind.bg(): Color = when (this) {
     TaskKind.TASK -> AppTheme.colors.taskBg
     TaskKind.CLASS -> AppTheme.colors.studyBg
 }
+
+/** สีหลักของกิจกรรม: สีที่ผู้ใช้เลือก ถ้าไม่ได้เลือกใช้สีตามประเภท */
+@Composable
+fun taskAccent(kind: TaskKind, color: String?): Color =
+    TaskPalette.find(color)?.let { if (AppTheme.colors.dark) it.dark.first else it.light.first } ?: kind.color()
+
+/** สีพื้นอ่อนของกิจกรรม คู่กับ [taskAccent] */
+@Composable
+fun taskFill(kind: TaskKind, color: String?): Color =
+    TaskPalette.find(color)?.let { if (AppTheme.colors.dark) it.dark.second else it.light.second } ?: kind.bg()
+
+@Composable
+fun ScheduleTaskEntity.accent(): Color = taskAccent(TaskKind.from(kind), color)
+
+@Composable
+fun ScheduleTaskEntity.fill(): Color = taskFill(TaskKind.from(kind), color)
 
 fun TaskKind.icon(): ImageVector = when (this) {
     TaskKind.WORK -> Icons.Filled.Work
@@ -358,7 +381,7 @@ fun DayStrip(blocks: List<TimeBlock>, modifier: Modifier = Modifier, fromMin: In
                             .offset(x = maxWidth * ((s - fromMin) / span))
                             .width(maxWidth * ((e - s) / span))
                             .fillMaxHeight()
-                            .background(b.kind.color())
+                            .background(taskAccent(b.kind, b.color))
                     )
                 }
             }
@@ -405,6 +428,8 @@ fun TimeRow(
     reminder: Boolean,
     showDivider: Boolean,
     subtitle: String? = null,
+    /** สีที่ผู้ใช้เลือก null = สีตามประเภท */
+    color: String? = null,
     /** null = แถวนี้กดเองไม่ได้ (ให้ตัวที่ครอบอยู่จัดการ เช่นโหมดเลือกหลายรายการ) */
     onClick: (() -> Unit)?
 ) {
@@ -418,13 +443,14 @@ fun TimeRow(
                 .padding(vertical = 15.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(Modifier.width(4.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(kind.color()))
+            val accent = taskAccent(kind, color)
+            Box(Modifier.width(4.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(accent))
             Spacer(Modifier.width(14.dp))
             Text(rangeText(startMin, endMin), style = MaterialTheme.typography.titleSmall, modifier = Modifier.width(110.dp))
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(kind.icon(), contentDescription = kind.label, tint = kind.color(), modifier = Modifier.size(14.dp))
+                    Icon(kind.icon(), contentDescription = kind.label, tint = accent, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(6.dp))
                     Hint(subtitle ?: durationText(endMin - startMin))
                 }
@@ -589,6 +615,8 @@ fun TaskEditorDialog(
                     }
                     TimeButton("สิ้นสุด", draft.endMin, Modifier.weight(1f)) { e -> draft = draft.copy(endMin = e) }
                 }
+                Text("สี", style = MaterialTheme.typography.titleSmall)
+                ColorPicker(kind = draft.kind, selected = draft.color) { draft = draft.copy(color = it) }
                 if (timeOk) {
                     Hint("ยาว ${durationText(draft.endMin - draft.startMin)}")
                 } else {
@@ -631,6 +659,59 @@ fun TaskEditorDialog(
             }
         }
     )
+}
+
+// ============================================================================
+// Color picker
+// ============================================================================
+
+/**
+ * เลือกสีกิจกรรม: วงแรก = สีตามประเภท แล้วตามด้วยสีใน TaskPalette
+ * วงละ 40dp ในพื้นที่กด 48dp ตัวที่เลือกมีเครื่องหมายถูก (ไม่พึ่งสีอย่างเดียว)
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun ColorPicker(kind: TaskKind, selected: String?, onSelect: (String?) -> Unit) {
+    val c = AppTheme.colors
+    val dark = c.dark
+    val items: List<Triple<String?, String, Color>> =
+        listOf(Triple(null, "ตามประเภท (${kind.label})", kind.color())) +
+            TaskPalette.swatches.map { Triple(it.key, it.label, if (dark) it.dark.first else it.light.first) }
+    FlowRow(
+        Modifier.fillMaxWidth().selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        items.forEach { (key, label, color) ->
+            val isSel = key == selected
+            Box(
+                Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .selectable(selected = isSel, role = Role.RadioButton, onClick = { onSelect(key) })
+                    .semantics { contentDescription = "สี$label" },
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(if (key == null) taskFill(kind, null) else color)
+                        .border(if (isSel) 3.dp else 0.dp, if (isSel) c.ink else Color.Transparent, CircleShape)
+                        .then(if (key == null) Modifier.border(2.dp, color, CircleShape) else Modifier),
+                    contentAlignment = Alignment.Center
+                ) {
+                    when {
+                        isSel -> Icon(
+                            Icons.Filled.Check, contentDescription = null,
+                            tint = if (key == null) color else c.surface, modifier = Modifier.size(20.dp)
+                        )
+                        key == null -> Icon(kind.icon(), contentDescription = null, tint = color, modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+        }
+    }
 }
 
 // ============================================================================

@@ -178,7 +178,11 @@ class DashboardViewModel @Inject constructor(
     fun save(date: LocalDate, existing: ScheduleTaskEntity?, draft: TaskDraft) {
         viewModelScope.launch {
             if (existing == null) repo.addTaskToDate(uid, date, draft.toScheduleTask(null, 0))
-            else repo.editSingleDayTask(draft.toScheduleTask(existing, existing.dayId), existing)
+            else {
+                val updated = draft.toScheduleTask(existing, existing.dayId)
+                repo.editSingleDayTask(updated, existing)
+                if (existing.isRepeating && updated.color != existing.color) repo.setSeriesColor(uid, existing, updated.color)
+            }
         }
     }
 
@@ -321,7 +325,8 @@ fun DashboardScreen(
         TaskEditorDialog(
             title = if (edit.task == null) "เพิ่มกิจกรรม ${shortDay(edit.date)}" else "แก้ไขกิจกรรม",
             initial = edit.task?.toDraft() ?: defaultDraft(TaskKind.TASK, start = ((nowMin / 60) + 1) * 60 % (24 * 60)),
-            footnote = "มีผลเฉพาะวันที่ ${shortDay(edit.date)} กิจวัตรมาตรฐานไม่เปลี่ยน",
+            footnote = "เวลาและชื่อมีผลเฉพาะวันที่ ${shortDay(edit.date)}" +
+                if (edit.task?.isRepeating == true) " ส่วนสีเปลี่ยนให้ทุกวันของรายการนี้" else "",
             onSave = { viewModel.save(edit.date, edit.task, it); editing = null },
             onDelete = edit.task?.let { t ->
                 {
@@ -458,11 +463,13 @@ private fun MonthGrid(
                     val d = first.plusDays((week * 7 + col).toLong())
                     val inMonth = d.month == anchor.month
                     val tasks = days[d]?.tasks.orEmpty()
-                    val kinds = kindOrder.filter { k -> tasks.any { it.kind == k.code } }
+                    // จุดสีใต้วันที่: หนึ่งจุดต่อสีที่ใช้ (สีที่เลือกเอง หรือสีตามประเภท)
+                    val dots = tasks.sortedBy { t -> kindOrder.indexOfFirst { it.code == t.kind } }
+                        .map { TaskKind.from(it.kind) to it.color }.distinct()
                     val isSel = d == selected
                     val cellBg by animateColorAsState(if (isSel) c.ink else Color.Transparent, tween(150), label = "cellBg")
                     val summary = if (tasks.isEmpty()) "ว่าง"
-                        else "${tasks.size} รายการ " + kinds.joinToString(" ") { it.label }
+                        else "${tasks.size} รายการ " + dots.map { it.first }.distinct().joinToString(" ") { it.label }
                     Column(
                         Modifier
                             .weight(1f)
@@ -494,12 +501,12 @@ private fun MonthGrid(
                         }
                         Spacer(Modifier.height(4.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.height(6.dp)) {
-                            kinds.take(3).forEach { k ->
+                            dots.take(3).forEach { (k, col) ->
                                 Box(
                                     Modifier
                                         .size(6.dp)
                                         .clip(CircleShape)
-                                        .background(if (isSel) c.ground else k.color())
+                                        .background(if (isSel) c.ground else taskAccent(k, col))
                                 )
                             }
                         }
@@ -538,7 +545,7 @@ private fun DayAgenda(
             tasks.forEachIndexed { i, t ->
                 TimeRow(
                     title = t.title, kind = TaskKind.from(t.kind), startMin = t.startMin, endMin = t.endMin,
-                    reminder = t.reminderEnabled, showDivider = i > 0, subtitle = t.description,
+                    reminder = t.reminderEnabled, showDivider = i > 0, subtitle = t.description, color = t.color,
                     onClick = { onOpenTask(t) }
                 )
             }
@@ -600,7 +607,7 @@ private fun WeekAgenda(
                 tasks.forEachIndexed { j, t ->
                     TimeRow(
                         title = t.title, kind = TaskKind.from(t.kind), startMin = t.startMin, endMin = t.endMin,
-                        reminder = t.reminderEnabled, showDivider = j > 0, subtitle = t.description,
+                        reminder = t.reminderEnabled, showDivider = j > 0, subtitle = t.description, color = t.color,
                         onClick = { onOpenTask(t, d) }
                     )
                 }
@@ -678,8 +685,8 @@ private fun StatusHeader(date: LocalDate, tasks: List<ScheduleTaskEntity>, isTod
     val current = if (isToday) tasks.firstOrNull { nowMin in it.startMin until it.endMin } else null
     val next = if (isToday) tasks.firstOrNull { it.startMin > nowMin } else null
     val done = tasks.count { it.status == "DONE" }
-    val currentColor = current?.let { TaskKind.from(it.kind).color() } ?: c.ink
-    val nextColor = next?.let { TaskKind.from(it.kind).color() } ?: c.ink
+    val currentColor = current?.accent() ?: c.ink
+    val nextColor = next?.accent() ?: c.ink
 
     val line = buildAnnotatedString {
         when {
@@ -860,8 +867,8 @@ private fun DayTimeline(
 private fun TimelineBlock(task: ScheduleTaskEntity, height: Dp, modifier: Modifier, onToggle: () -> Unit, onOpen: () -> Unit) {
     val c = AppTheme.colors
     val kind = TaskKind.from(task.kind)
-    val accent = kind.color()
-    val fill = kind.bg()
+    val accent = task.accent()
+    val fill = task.fill()
     val stripe = c.surface.copy(alpha = 0.45f)
     val done = task.status == "DONE"
     val thin = height < 52.dp

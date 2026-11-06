@@ -43,7 +43,8 @@ private fun RoutineTemplateTaskEntity.toScheduleTask(dayId: Long) = ScheduleTask
     sortOrder = sortOrder,
     reminderEnabled = reminderEnabled,
     kind = kind,
-    originTemplateTaskId = templateTaskId
+    originTemplateTaskId = templateTaskId,
+    color = color
 )
 
 @Singleton
@@ -125,6 +126,8 @@ class ScheduleRepository @Inject constructor(
 
     suspend fun upsertTemplateTask(uid: String, templateId: Long, task: RoutineTemplateTaskEntity) {
         routineDao.upsertTemplateTask(task.copy(templateId = templateId))
+        // วันที่ปรับเองแล้วไม่ถูกสร้างใหม่ตามกิจวัตร จึงเปลี่ยนสีให้ตรงด้วย
+        if (task.templateTaskId != 0L) scheduleDao.setTemplateCopiesColor(task.templateTaskId, task.color)
         afterTemplateChange(uid, templateId)
     }
 
@@ -171,6 +174,19 @@ class ScheduleRepository @Inject constructor(
                 if (template != null) deleteTemplateTasks(uid, template.templateId, listOf(origin))
                 else removeTasks(uid, scheduleDao.findTemplateCopies(uid, listOf(origin), from), restoreRoutine = false)
             }
+        }
+    }
+
+    /**
+     * เปลี่ยนสีทั้งชุด (สีไม่ใช่การแก้เวลา จึงให้ตรงกันทุกวัน)
+     *  - คาบที่นำเข้า: ทุกคาบชื่อเดียวกันในตารางชุดนั้น (เช่น ระบบเสียง ทั้งเช้าและบ่าย)
+     *  - กิจวัตร: รายการกิจวัตร และทุกวันที่สร้างจากรายการนี้
+     */
+    suspend fun setSeriesColor(uid: String, task: ScheduleTaskEntity, color: String?) {
+        task.importBatchId?.let { scheduleDao.setImportedColor(uid, it, task.title, color) }
+        task.originTemplateTaskId?.let { id ->
+            routineDao.setColor(id, color)
+            scheduleDao.setTemplateCopiesColor(id, color)
         }
     }
 

@@ -45,7 +45,9 @@ data class AppColors(
     val studyBg: Color,
     val now: Color,
     val up: Color,
-    val down: Color
+    val down: Color,
+    /** โหมดมืด: ใช้เลือกคู่สีใน TaskPalette */
+    val dark: Boolean = false
 )
 
 private val LightApp = AppColors(
@@ -85,8 +87,31 @@ private val DarkApp = AppColors(
     studyBg = Color(0xFF3B1D37),
     now = Color(0xFFFF7A6E),
     up = Color(0xFF63D094),
-    down = Color(0xFFFF8A80)
+    down = Color(0xFFFF8A80),
+    dark = true
 )
+
+/**
+ * สีที่ผู้ใช้เลือกให้กิจกรรมได้ แต่ละสีมีคู่ เข้ม (เส้น/ไอคอน) กับ อ่อน (พื้นบล็อก)
+ * โหมดสว่าง: สีเข้มบนพื้นขาว ≥ 4.5:1  โหมดมืด: สีสว่างบนพื้นเข้ม
+ */
+object TaskPalette {
+    data class Swatch(val key: String, val label: String, val light: Pair<Color, Color>, val dark: Pair<Color, Color>)
+
+    val swatches = listOf(
+        Swatch("red", "แดง", Color(0xFFC0392B) to Color(0xFFFBE9E7), Color(0xFFFF8A80) to Color(0xFF3D1A17)),
+        Swatch("orange", "ส้ม", Color(0xFFA9520E) to Color(0xFFFCEDE0), Color(0xFFFFB074) to Color(0xFF3D2510)),
+        Swatch("amber", "เหลือง", Color(0xFF8A6500) to Color(0xFFFAF2D9), Color(0xFFF2C94C) to Color(0xFF3A2E0B)),
+        Swatch("green", "เขียว", Color(0xFF2C7A4B) to Color(0xFFE3F3E8), Color(0xFF6FD39A) to Color(0xFF14392A)),
+        Swatch("teal", "เขียวน้ำทะเล", Color(0xFF0E7470) to Color(0xFFDCF1EF), Color(0xFF5FD3CC) to Color(0xFF103734)),
+        Swatch("blue", "น้ำเงิน", Color(0xFF2B44C4) to Color(0xFFE6E9FA), Color(0xFF8FA0FF) to Color(0xFF1F2856)),
+        Swatch("violet", "ม่วง", Color(0xFF6741C0) to Color(0xFFEEE8FB), Color(0xFFB9A0FF) to Color(0xFF2A1F4D)),
+        Swatch("pink", "ชมพู", Color(0xFFB02D6B) to Color(0xFFFBE7F0), Color(0xFFFF8FC0) to Color(0xFF3D1529)),
+        Swatch("gray", "เทา", Color(0xFF56625E) to Color(0xFFECEFEE), Color(0xFFB5C0BC) to Color(0xFF29322F))
+    )
+
+    fun find(key: String?): Swatch? = key?.let { k -> swatches.firstOrNull { it.key == k } }
+}
 
 val LocalAppColors = staticCompositionLocalOf { LightApp }
 

@@ -54,6 +54,9 @@ interface RoutineDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertTemplateTasks(tasks: List<RoutineTemplateTaskEntity>)
 
+    @Query("UPDATE routine_template_tasks SET color = :color WHERE templateTaskId = :templateTaskId")
+    suspend fun setColor(templateTaskId: Long, color: String?)
+
     @Delete
     suspend fun deleteTemplateTask(task: RoutineTemplateTaskEntity)
 

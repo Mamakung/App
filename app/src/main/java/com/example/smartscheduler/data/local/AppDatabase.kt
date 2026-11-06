@@ -20,7 +20,7 @@ import com.example.smartscheduler.data.local.entity.*
         MarketNewsSummaryEntity::class,
         StockRecommendationEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -49,6 +49,14 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE schedule_tasks ADD COLUMN importBatchId TEXT")
                 db.execSQL("UPDATE schedule_tasks SET importBatchId = '$LEGACY_IMPORT' WHERE kind = 'CLASS' AND originTemplateTaskId IS NULL")
+            }
+        }
+
+        /** v5: สีกิจกรรมที่ผู้ใช้เลือกเอง */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE schedule_tasks ADD COLUMN color TEXT")
+                db.execSQL("ALTER TABLE routine_template_tasks ADD COLUMN color TEXT")
             }
         }
 
