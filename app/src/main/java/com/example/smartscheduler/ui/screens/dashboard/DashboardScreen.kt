@@ -319,7 +319,7 @@ fun DashboardScreen(
             }
         }
 
-        // ปุ่ม + : กด/กดค้างแล้วกางเมนูไอคอน (เพิ่มลงวันที่เลือก / เพิ่มหลายวัน)
+        // ปุ่ม + : กด/กดค้างแล้วกางเมนูไอคอน (เพิ่มลงวันที่เลือก / เพิ่มหลายวัน / นำเข้าไฟล์ตาราง)
         val fabStyle by viewModel.fabStyle.collectAsState()
         val addDayLabel = if (state.date == today) "เพิ่มวันนี้" else "เพิ่มวันที่ ${shortDay(state.date)}"
         AddMenuFab(
@@ -336,6 +336,12 @@ fun DashboardScreen(
                     tint = { AppTheme.colors.study },
                     icon = { tint -> Icon(StackedCalendars, contentDescription = null, tint = tint, modifier = Modifier.size(26.dp)) },
                     onClick = onOpenBatchAssign
+                ),
+                AddMenuAction(
+                    label = "นำเข้าไฟล์ตาราง",
+                    tint = { AppTheme.colors.task },
+                    icon = { tint -> Icon(Icons.Filled.UploadFile, contentDescription = null, tint = tint, modifier = Modifier.size(26.dp)) },
+                    onClick = onOpenImport
                 )
             )
         )
