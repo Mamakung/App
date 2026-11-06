@@ -44,7 +44,9 @@ private fun RoutineTemplateTaskEntity.toScheduleTask(dayId: Long) = ScheduleTask
     reminderEnabled = reminderEnabled,
     kind = kind,
     originTemplateTaskId = templateTaskId,
-    color = color
+    color = color,
+    icon = icon,
+    categoryId = categoryId
 )
 
 @Singleton
@@ -127,7 +129,9 @@ class ScheduleRepository @Inject constructor(
     suspend fun upsertTemplateTask(uid: String, templateId: Long, task: RoutineTemplateTaskEntity) {
         routineDao.upsertTemplateTask(task.copy(templateId = templateId))
         // วันที่ปรับเองแล้วไม่ถูกสร้างใหม่ตามกิจวัตร จึงเปลี่ยนสีให้ตรงด้วย
-        if (task.templateTaskId != 0L) scheduleDao.setTemplateCopiesColor(task.templateTaskId, task.color)
+        if (task.templateTaskId != 0L) {
+            scheduleDao.setTemplateCopiesStyle(task.templateTaskId, task.kind, task.categoryId, task.color, task.icon)
+        }
         afterTemplateChange(uid, templateId)
     }
 
@@ -178,15 +182,18 @@ class ScheduleRepository @Inject constructor(
     }
 
     /**
-     * เปลี่ยนสีทั้งชุด (สีไม่ใช่การแก้เวลา จึงให้ตรงกันทุกวัน)
+     * เปลี่ยนหน้าตาทั้งชุด: ประเภท หมวด สี ไอคอน (ไม่ใช่การแก้เวลา จึงให้ตรงกันทุกวัน)
      *  - คาบที่นำเข้า: ทุกคาบชื่อเดียวกันในตารางชุดนั้น (เช่น ระบบเสียง ทั้งเช้าและบ่าย)
      *  - กิจวัตร: รายการกิจวัตร และทุกวันที่สร้างจากรายการนี้
+     * [series] = รายการก่อนแก้ (ใช้ชื่อเดิมหาคาบอื่น)  [style] = ค่าใหม่
      */
-    suspend fun setSeriesColor(uid: String, task: ScheduleTaskEntity, color: String?) {
-        task.importBatchId?.let { scheduleDao.setImportedColor(uid, it, task.title, color) }
-        task.originTemplateTaskId?.let { id ->
-            routineDao.setColor(id, color)
-            scheduleDao.setTemplateCopiesColor(id, color)
+    suspend fun setSeriesStyle(uid: String, series: ScheduleTaskEntity, style: ScheduleTaskEntity) {
+        series.importBatchId?.let {
+            scheduleDao.setImportedStyle(uid, it, series.title, style.kind, style.categoryId, style.color, style.icon)
+        }
+        series.originTemplateTaskId?.let { id ->
+            routineDao.setStyle(id, style.kind, style.categoryId, style.color, style.icon)
+            scheduleDao.setTemplateCopiesStyle(id, style.kind, style.categoryId, style.color, style.icon)
         }
     }
 

@@ -56,7 +56,11 @@ data class ScheduleTaskEntity(
     /** ชุดที่นำเข้าจากไฟล์ตาราง (null = เพิ่มเองหรือมาจากกิจวัตร) ใช้ลบหรือแทนที่ทั้งชุด */
     val importBatchId: String? = null,
     /** สีที่ผู้ใช้เลือก (ชื่อใน TaskPalette เช่น "teal") null = สีตามประเภท */
-    val color: String? = null
+    val color: String? = null,
+    /** ไอคอนที่เลือก (ชื่อใน TaskIcons) null = ตามหมวด/ประเภท */
+    val icon: String? = null,
+    /** หมวดหมู่ที่ผู้ใช้สร้าง (CategoryEntity) null = ใช้ประเภทพื้นฐาน */
+    val categoryId: Long? = null
 )
 
 /**

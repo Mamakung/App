@@ -181,7 +181,9 @@ class DashboardViewModel @Inject constructor(
             else {
                 val updated = draft.toScheduleTask(existing, existing.dayId)
                 repo.editSingleDayTask(updated, existing)
-                if (existing.isRepeating && updated.color != existing.color) repo.setSeriesColor(uid, existing, updated.color)
+                val styleChanged = updated.color != existing.color || updated.icon != existing.icon ||
+                    updated.categoryId != existing.categoryId || updated.kind != existing.kind
+                if (existing.isRepeating && styleChanged) repo.setSeriesStyle(uid, existing, updated)
             }
         }
     }
@@ -326,7 +328,7 @@ fun DashboardScreen(
             title = if (edit.task == null) "เพิ่มกิจกรรม ${shortDay(edit.date)}" else "แก้ไขกิจกรรม",
             initial = edit.task?.toDraft() ?: defaultDraft(TaskKind.TASK, start = ((nowMin / 60) + 1) * 60 % (24 * 60)),
             footnote = "เวลาและชื่อมีผลเฉพาะวันที่ ${shortDay(edit.date)}" +
-                if (edit.task?.isRepeating == true) " ส่วนสีเปลี่ยนให้ทุกวันของรายการนี้" else "",
+                if (edit.task?.isRepeating == true) " ส่วนหมวด สี และไอคอนเปลี่ยนให้ทุกวันของรายการนี้" else "",
             onSave = { viewModel.save(edit.date, edit.task, it); editing = null },
             onDelete = edit.task?.let { t ->
                 {
@@ -465,7 +467,7 @@ private fun MonthGrid(
                     val tasks = days[d]?.tasks.orEmpty()
                     // จุดสีใต้วันที่: หนึ่งจุดต่อสีที่ใช้ (สีที่เลือกเอง หรือสีตามประเภท)
                     val dots = tasks.sortedBy { t -> kindOrder.indexOfFirst { it.code == t.kind } }
-                        .map { TaskKind.from(it.kind) to it.color }.distinct()
+                        .map { Triple(TaskKind.from(it.kind), it.color, it.categoryId) }.distinct()
                     val isSel = d == selected
                     val cellBg by animateColorAsState(if (isSel) c.ink else Color.Transparent, tween(150), label = "cellBg")
                     val summary = if (tasks.isEmpty()) "ว่าง"
@@ -501,12 +503,12 @@ private fun MonthGrid(
                         }
                         Spacer(Modifier.height(4.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.height(6.dp)) {
-                            dots.take(3).forEach { (k, col) ->
+                            dots.take(3).forEach { (k, col, cat) ->
                                 Box(
                                     Modifier
                                         .size(6.dp)
                                         .clip(CircleShape)
-                                        .background(if (isSel) c.ground else taskAccent(k, col))
+                                        .background(if (isSel) c.ground else taskAccent(k, col, cat))
                                 )
                             }
                         }
@@ -545,7 +547,7 @@ private fun DayAgenda(
             tasks.forEachIndexed { i, t ->
                 TimeRow(
                     title = t.title, kind = TaskKind.from(t.kind), startMin = t.startMin, endMin = t.endMin,
-                    reminder = t.reminderEnabled, showDivider = i > 0, subtitle = t.description, color = t.color,
+                    reminder = t.reminderEnabled, showDivider = i > 0, subtitle = t.description, color = t.color, icon = t.icon, categoryId = t.categoryId,
                     onClick = { onOpenTask(t) }
                 )
             }
@@ -607,7 +609,7 @@ private fun WeekAgenda(
                 tasks.forEachIndexed { j, t ->
                     TimeRow(
                         title = t.title, kind = TaskKind.from(t.kind), startMin = t.startMin, endMin = t.endMin,
-                        reminder = t.reminderEnabled, showDivider = j > 0, subtitle = t.description, color = t.color,
+                        reminder = t.reminderEnabled, showDivider = j > 0, subtitle = t.description, color = t.color, icon = t.icon, categoryId = t.categoryId,
                         onClick = { onOpenTask(t, d) }
                     )
                 }
@@ -915,7 +917,7 @@ private fun TimelineBlock(task: ScheduleTaskEntity, height: Dp, modifier: Modifi
                     overflow = TextOverflow.Ellipsis
                 )
                 if (!thin) Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(kind.icon(), contentDescription = kind.label, tint = accent, modifier = Modifier.size(14.dp))
+                    Icon(task.iconVector(), contentDescription = task.categoryLabel(), tint = accent, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(6.dp))
                     Hint("${rangeText(task.startMin, task.endMin)}  ${task.description ?: durationText(task.durationMinutes)}")
                 }

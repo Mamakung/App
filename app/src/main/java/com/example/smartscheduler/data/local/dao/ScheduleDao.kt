@@ -116,17 +116,19 @@ interface ScheduleDao {
     )
     suspend fun findTemplateCopies(ownerUid: String, templateTaskIds: List<Long>, fromEpochDay: Long): List<TaskOnDate>
 
-    /** เปลี่ยนสีทุกคาบชื่อเดียวกันในชุดนำเข้าเดียวกัน */
+    /** เปลี่ยนหน้าตา (ประเภท หมวด สี ไอคอน) ทุกคาบชื่อเดียวกันในชุดนำเข้าเดียวกัน */
     @Query(
-        """UPDATE schedule_tasks SET color = :color
+        """UPDATE schedule_tasks SET kind = :kind, categoryId = :categoryId, color = :color, icon = :icon
            WHERE importBatchId = :batchId AND title = :title
              AND dayId IN (SELECT dayId FROM schedule_days WHERE ownerUid = :ownerUid)"""
     )
-    suspend fun setImportedColor(ownerUid: String, batchId: String, title: String, color: String?)
+    suspend fun setImportedStyle(
+        ownerUid: String, batchId: String, title: String, kind: String, categoryId: Long?, color: String?, icon: String?
+    )
 
-    /** เปลี่ยนสีทุกวันที่สร้างจากรายการกิจวัตรนี้ */
-    @Query("UPDATE schedule_tasks SET color = :color WHERE originTemplateTaskId = :templateTaskId")
-    suspend fun setTemplateCopiesColor(templateTaskId: Long, color: String?)
+    /** เปลี่ยนหน้าตาทุกวันที่สร้างจากรายการกิจวัตรนี้ */
+    @Query("UPDATE schedule_tasks SET kind = :kind, categoryId = :categoryId, color = :color, icon = :icon WHERE originTemplateTaskId = :templateTaskId")
+    suspend fun setTemplateCopiesStyle(templateTaskId: Long, kind: String, categoryId: Long?, color: String?, icon: String?)
 
     @Query("DELETE FROM schedule_tasks WHERE taskId IN (:taskIds)")
     suspend fun deleteTasksByIds(taskIds: List<Long>)

@@ -198,16 +198,18 @@ class ImportViewModel @Inject constructor(
     fun dismissError() = _state.update { it.copy(error = null) }
     fun restart() = _state.update { freshState() }
 
-    /** แก้รายการเดียว ส่วนสีใช้กับทุกคาบของวิชาเดียวกัน (เหมือนในปฏิทิน) */
+    /** แก้รายการเดียว ส่วนหมวด สี ไอคอน ใช้กับทุกคาบของวิชาเดียวกัน (เหมือนในปฏิทิน) */
     fun updateEntry(old: TimetableEntry, draft: TaskDraft) = _state.update { s ->
-        val colorChanged = draft.color != old.color
+        val styleChanged = draft.color != old.color || draft.icon != old.icon ||
+            draft.categoryId != old.categoryId || draft.kind != old.kind
         s.copy(entries = s.entries.map {
             when {
                 it === old -> it.copy(
                     title = draft.title.trim(), startMin = draft.startMin, endMin = draft.endMin,
-                    kind = draft.kind, color = draft.color
+                    kind = draft.kind, color = draft.color, icon = draft.icon, categoryId = draft.categoryId
                 )
-                colorChanged && it.subjectKey() == old.subjectKey() -> it.copy(color = draft.color)
+                styleChanged && it.subjectKey() == old.subjectKey() ->
+                    it.copy(kind = draft.kind, color = draft.color, icon = draft.icon, categoryId = draft.categoryId)
                 else -> it
             }
         })
@@ -234,7 +236,9 @@ class ImportViewModel @Inject constructor(
                         durationMinutes = e.endMin - e.startMin,
                         sortOrder = 100 + i,
                         kind = e.kind.code,
-                        color = e.color
+                        color = e.color,
+                        icon = e.icon,
+                        categoryId = e.categoryId
                     )
                 )
             }
@@ -383,7 +387,7 @@ fun ImportScreen(onBack: () -> Unit, onDone: () -> Unit, viewModel: ImportViewMo
                                         reminder = true,
                                         showDivider = i > 0,
                                         subtitle = e.detail().ifBlank { null },
-                                        color = e.color,
+                                        color = e.color, icon = e.icon, categoryId = e.categoryId,
                                         onClick = { editing = e }
                                     )
                                 }
@@ -433,8 +437,8 @@ fun ImportScreen(onBack: () -> Unit, onDone: () -> Unit, viewModel: ImportViewMo
     editing?.let { e ->
         TaskEditorDialog(
             title = "แก้รายการ",
-            initial = TaskDraft(e.title, e.kind, e.startMin, e.endMin, true, color = e.color),
-            footnote = listOfNotNull(e.detail().ifBlank { null }, "สีเปลี่ยนให้ทุกคาบของวิชานี้").joinToString("\n"),
+            initial = TaskDraft(e.title, e.kind, e.startMin, e.endMin, true, color = e.color, icon = e.icon, categoryId = e.categoryId),
+            footnote = listOfNotNull(e.detail().ifBlank { null }, "หมวด สี และไอคอนเปลี่ยนให้ทุกคาบของวิชานี้").joinToString("\n"),
             onSave = { viewModel.updateEntry(e, it); editing = null },
             onDelete = { viewModel.removeEntry(e); editing = null },
             onDismiss = { editing = null }

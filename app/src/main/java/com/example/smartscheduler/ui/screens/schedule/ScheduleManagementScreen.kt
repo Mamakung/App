@@ -155,7 +155,7 @@ fun RoutineScreen(
             }
 
             val wake = template.wakeUpHour * 60 + template.wakeUpMinute
-            val blocks = state.tasks.map { TimeBlock(it.startMin, it.endMin, TaskKind.from(it.kind), it.color) }
+            val blocks = state.tasks.map { TimeBlock(it.startMin, it.endMin, TaskKind.from(it.kind), it.color, it.categoryId) }
 
             item {
                 Panel {
@@ -214,7 +214,7 @@ fun RoutineScreen(
                                 reminder = t.reminderEnabled,
                                 showDivider = i > 0,
                                 subtitle = "ทำซ้ำ $repeat",
-                                color = t.color,
+                                color = t.color, icon = t.icon, categoryId = t.categoryId,
                                 onClick = { editing = RoutineEdit(t, TaskKind.from(t.kind)) }
                             )
                         } else {
@@ -240,7 +240,7 @@ fun RoutineScreen(
                                         reminder = t.reminderEnabled,
                                         showDivider = false,
                                         subtitle = "ทำซ้ำ $repeat",
-                                        color = t.color,
+                                        color = t.color, icon = t.icon, categoryId = t.categoryId,
                                         onClick = null
                                     )
                                 }
@@ -265,6 +265,8 @@ fun RoutineScreen(
                         Text("นำเข้าตารางเรียนหรือตารางงานจากไฟล์")
                     }
                 }
+
+                item { CategoriesSection() }
 
                 item {
                     SectionTitle("เกี่ยวกับแอป", Modifier.padding(top = 12.dp))

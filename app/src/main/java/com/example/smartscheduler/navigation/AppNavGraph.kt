@@ -16,6 +16,12 @@ import com.example.smartscheduler.update.rememberAppUpdateViewModel
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.smartscheduler.ui.components.CategoryViewModel
+import com.example.smartscheduler.ui.components.LocalCategories
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -62,7 +68,12 @@ fun AppNavGraph(startDestination: String = Routes.AUTH, openUpdateOnStart: Boole
     UpdateHost(updateViewModel, openedFromNotification = openUpdateOnStart)
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+    val categoryViewModel: CategoryViewModel = hiltViewModel()
+    val categories by categoryViewModel.categories.collectAsState()
+    val categoryMap = remember(categories) { categories.associateBy { it.categoryId } }
 
+    // หมวดหมู่ที่สร้างเอง ใช้หาสี/ไอคอน/ชื่อของกิจกรรมทุกหน้า
+    CompositionLocalProvider(LocalCategories provides categoryMap) {
     Scaffold(
         bottomBar = {
             if (tabs.any { it.route == currentRoute }) {
@@ -147,5 +158,6 @@ fun AppNavGraph(startDestination: String = Routes.AUTH, openUpdateOnStart: Boole
                 StockAnalysisScreen(onBack = { navController.popBackStack() })
             }
         }
+    }
     }
 }

@@ -19,7 +19,7 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, AppDatabase.DATABASE_NAME)
-            .addMigrations(AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
+            .addMigrations(AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6)
             // ต่อไปถ้าเพิ่ม version ต้องเพิ่ม Migration ด้วย ไม่งั้นข้อมูลผู้ใช้จะหายตอนอัปเดต
             .fallbackToDestructiveMigrationFrom(1)
             .build()
@@ -30,5 +30,6 @@ object DatabaseModule {
     @Provides fun provideWatchlistDao(db: AppDatabase): WatchlistDao = db.watchlistDao()
     @Provides fun provideStockNoteDao(db: AppDatabase): StockNoteDao = db.stockNoteDao()
     @Provides fun provideMarketNewsDao(db: AppDatabase): MarketNewsDao = db.marketNewsDao()
+    @Provides fun provideCategoryDao(db: AppDatabase): CategoryDao = db.categoryDao()
     @Provides fun provideStockRecommendationDao(db: AppDatabase): StockRecommendationDao = db.stockRecommendationDao()
 }
