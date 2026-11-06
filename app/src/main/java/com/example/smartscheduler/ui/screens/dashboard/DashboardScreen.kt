@@ -1,5 +1,14 @@
 package com.example.smartscheduler.ui.screens.dashboard
 
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.unit.IntSize
+import kotlinx.coroutines.delay
 import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
@@ -242,6 +251,7 @@ private fun ScheduleDayWithTasks?.sortedTasks(): List<ScheduleTaskEntity> =
 @Composable
 fun DashboardScreen(
     onOpenBatchAssign: () -> Unit,
+    onOpenBatchRange: (LocalDate, LocalDate) -> Unit,
     onOpenImport: () -> Unit,
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
@@ -288,7 +298,10 @@ fun DashboardScreen(
                         anchor = state.date,
                         selected = state.date,
                         days = state.range,
-                        onTap = viewModel::openDay
+                        onTap = viewModel::openDay,
+                        onAddDay = { d -> viewModel.select(d); editing = DashEdit(null, d) },
+                        onAddRange = onOpenBatchRange,
+                        onShiftMonth = viewModel::step
                     )
                     Spacer(Modifier.height(20.dp))
                     DayAgenda(
@@ -460,6 +473,9 @@ private fun PeriodNav(
 // Month view
 // ============================================================================
 
+private fun rangeStartOf(a: LocalDate?, b: LocalDate?) = listOfNotNull(a, b).minOrNull()
+private fun rangeEndOf(a: LocalDate?, b: LocalDate?) = listOfNotNull(a, b).maxOrNull()
+
 private const val StackIcon = 14
 private const val StackStep = 4
 private const val StackMaxLayers = 3
@@ -509,23 +525,121 @@ private fun MonthGrid(
     anchor: LocalDate,
     selected: LocalDate,
     days: Map<LocalDate, ScheduleDayWithTasks>,
-    onTap: (LocalDate) -> Unit
+    onTap: (LocalDate) -> Unit,
+    onAddDay: (LocalDate) -> Unit,
+    onAddRange: (LocalDate, LocalDate) -> Unit,
+    onShiftMonth: (Boolean) -> Unit
 ) {
     val c = AppTheme.colors
     val today = LocalDate.now()
     val first = Recurrence.weekStart(anchor.withDayOfMonth(1))
+
+    // ---------- กดค้างแล้วลากเลือกช่วงวัน ----------
+    // กดค้างแล้วปล่อยที่เดิม = เพิ่มกิจกรรมวันนั้น / ลากไปหลายวัน = เปิดหน้าเพิ่มหลายวันพร้อมช่วงที่เลือก
+    // ลากไปค้างที่ขอบล่าง/บนของตาราง = เลื่อนไปเดือนถัดไป/ก่อนหน้า
+    val haptic = LocalHapticFeedback.current
+    val density = LocalDensity.current
+    val edgePx = with(density) { 18.dp.toPx() }
+    var gridSize by remember { mutableStateOf(IntSize.Zero) }
+    var dragFrom by remember { mutableStateOf<LocalDate?>(null) }
+    var dragTo by remember { mutableStateOf<LocalDate?>(null) }
+    var fingerY by remember { mutableStateOf(0f) }
+    var fingerPos by remember { mutableStateOf(Offset.Zero) }
+    var dragging by remember { mutableStateOf(false) }
+    val currentFirst by rememberUpdatedState(first)
+    val addDay by rememberUpdatedState(onAddDay)
+    val addRange by rememberUpdatedState(onAddRange)
+    val shift by rememberUpdatedState(onShiftMonth)
+
+    fun dateAt(pos: Offset): LocalDate {
+        val w = gridSize.width.coerceAtLeast(1) / 7f
+        val h = gridSize.height.coerceAtLeast(1) / 6f
+        val col = (pos.x / w).toInt().coerceIn(0, 6)
+        val row = (pos.y / h).toInt().coerceIn(0, 5)
+        return currentFirst.plusDays((row * 7 + col).toLong())
+    }
+
+    // ค้างที่ขอบ: เลื่อนเดือนทุก ~0.6 วินาที แล้วเลือกวันใต้นิ้วในเดือนใหม่
+    val edgeDir = when {
+        !dragging -> 0
+        fingerY > gridSize.height - edgePx -> 1
+        fingerY < edgePx -> -1
+        else -> 0
+    }
+    LaunchedEffect(edgeDir) {
+        while (edgeDir != 0) {
+            delay(600)
+            shift(edgeDir > 0)
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            delay(32)
+            dragTo = dateAt(fingerPos)
+        }
+    }
+
+    val rangeStart = listOfNotNull(dragFrom, dragTo).minOrNull()
+    val rangeEnd = listOfNotNull(dragFrom, dragTo).maxOrNull()
+    fun inDragRange(d: LocalDate) = dragging && rangeStart != null && rangeEnd != null && !d.isBefore(rangeStart) && !d.isAfter(rangeEnd)
+
     Column(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
-            for (i in 0..6) {
+        Box(Modifier.fillMaxWidth().height(22.dp).padding(bottom = 4.dp), contentAlignment = Alignment.Center) {
+            if (dragging && rangeStart != null && rangeEnd != null) {
+                // ระหว่างลาก: แทนแถบชื่อวันด้วยสรุปช่วงที่เลือก
+                val n = java.time.temporal.ChronoUnit.DAYS.between(rangeStart, rangeEnd) + 1
                 Text(
-                    dayLetter(first.plusDays(i.toLong())),
+                    if (n == 1L) "${shortDay(rangeStart)} · ปล่อยเพื่อเพิ่มกิจกรรม"
+                    else "${shortDay(rangeStart)} – ${shortDay(rangeEnd)} · $n วัน",
                     style = MaterialTheme.typography.labelMedium,
-                    color = c.muted,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f).clearAndSetSemantics { }
+                    fontWeight = FontWeight.SemiBold,
+                    color = c.ground,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(c.study).padding(horizontal = 10.dp, vertical = 1.dp)
                 )
+            } else {
+                Row(Modifier.fillMaxWidth()) {
+                    for (i in 0..6) {
+                        Text(
+                            dayLetter(first.plusDays(i.toLong())),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = c.muted,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.weight(1f).clearAndSetSemantics { }
+                        )
+                    }
+                }
             }
         }
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .onSizeChanged { gridSize = it }
+                .pointerInput(Unit) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = { pos ->
+                            val d = dateAt(pos)
+                            dragFrom = d; dragTo = d; fingerPos = pos; fingerY = pos.y; dragging = true
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        },
+                        onDrag = { change, amount ->
+                            change.consume()
+                            fingerPos += amount
+                            fingerY = fingerPos.y
+                            val d = dateAt(fingerPos)
+                            if (d != dragTo) {
+                                dragTo = d
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            }
+                        },
+                        onDragEnd = {
+                            val a = rangeStartOf(dragFrom, dragTo)
+                            val b = rangeEndOf(dragFrom, dragTo)
+                            dragging = false; dragFrom = null; dragTo = null
+                            if (a != null && b != null) {
+                                if (a == b) addDay(a) else addRange(a, b)
+                            }
+                        },
+                        onDragCancel = { dragging = false; dragFrom = null; dragTo = null }
+                    )
+                }
+        ) {
         for (week in 0 until 6) {
             Row(Modifier.fillMaxWidth()) {
                 for (col in 0..6) {
@@ -538,8 +652,16 @@ private fun MonthGrid(
                         .groupBy({ it.first }, { it.second })
                         .map { (icon, colors) -> icon to colors.distinct() }
                     val kindsUsed = kindOrder.filter { k -> tasks.any { it.kind == k.code } }
-                    val isSel = d == selected
-                    val cellBg by animateColorAsState(if (isSel) c.ink else Color.Transparent, tween(150), label = "cellBg")
+                    val inRange = inDragRange(d)
+                    val isSel = d == selected && !dragging
+                    val cellBg by animateColorAsState(
+                        when {
+                            inRange -> c.study.copy(alpha = 0.32f)
+                            isSel -> c.ink
+                            else -> Color.Transparent
+                        },
+                        tween(120), label = "cellBg"
+                    )
                     val summary = if (tasks.isEmpty()) "ว่าง"
                         else "${tasks.size} รายการ " + kindsUsed.joinToString(" ") { it.label }
                     Column(
@@ -549,7 +671,9 @@ private fun MonthGrid(
                             .padding(2.dp)
                             .clip(RoundedCornerShape(12.dp))
                             .background(cellBg)
-                            .selectable(selected = isSel, role = Role.Button, onClick = { onTap(d) })
+                            .then(if (inRange && (d == rangeStart || d == rangeEnd)) Modifier.border(2.dp, c.study, RoundedCornerShape(12.dp)) else Modifier)
+                            // ระหว่างกดค้าง/ลาก ไม่นับเป็นการแตะ (กันเปิดรายวันตอนปล่อยนิ้ว)
+                            .selectable(selected = isSel, role = Role.Button, onClick = { if (!dragging) onTap(d) })
                             .semantics { contentDescription = "${d.format(longDate)} $summary" + if (d == today) " วันนี้" else "" }
                             .padding(vertical = 6.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
@@ -599,6 +723,7 @@ private fun MonthGrid(
                     }
                 }
             }
+        }
         }
         Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             kindOrder.forEach { k ->

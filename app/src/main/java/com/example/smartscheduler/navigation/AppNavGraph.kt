@@ -45,6 +45,9 @@ object Routes {
     const val DASHBOARD = "dashboard"
     const val ROUTINE = "routine"
     const val BATCH_ASSIGN = "batch_assign"
+    /** เปิดหน้าเพิ่มหลายวันพร้อมช่วงวันที่ (จากการลากเลือกในปฏิทิน) */
+    const val BATCH_ASSIGN_RANGE = "batch_assign?from={from}&to={to}"
+    fun batchAssignRange(from: java.time.LocalDate, to: java.time.LocalDate) = "batch_assign?from=$from&to=$to"
     const val IMPORT = "import"
     const val SETTINGS = "settings"
 }
@@ -114,6 +117,7 @@ fun AppNavGraph(startDestination: String = Routes.AUTH, openUpdateOnStart: Boole
             composable(Routes.DASHBOARD) {
                 DashboardScreen(
                     onOpenBatchAssign = { navController.navigate(Routes.BATCH_ASSIGN) },
+                    onOpenBatchRange = { a, b -> navController.navigate(Routes.batchAssignRange(a, b)) },
                     onOpenImport = { navController.navigate(Routes.IMPORT) }
                 )
             }
@@ -135,6 +139,15 @@ fun AppNavGraph(startDestination: String = Routes.AUTH, openUpdateOnStart: Boole
                 )
             }
             composable(Routes.BATCH_ASSIGN) {
+                BatchAssignScreen(onBack = { navController.popBackStack() })
+            }
+            composable(
+                Routes.BATCH_ASSIGN_RANGE,
+                arguments = listOf(
+                    navArgument("from") { type = NavType.StringType; nullable = true; defaultValue = null },
+                    navArgument("to") { type = NavType.StringType; nullable = true; defaultValue = null }
+                )
+            ) {
                 BatchAssignScreen(onBack = { navController.popBackStack() })
             }
             composable(Routes.SETTINGS) { SettingsScreen() }

@@ -91,10 +91,22 @@ fun BatchUiState.resolvedDates(): List<LocalDate> {
 @HiltViewModel
 class BatchAssignViewModel @Inject constructor(
     private val repo: ScheduleRepository,
-    private val auth: CurrentUser
+    private val auth: CurrentUser,
+    savedState: androidx.lifecycle.SavedStateHandle
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(BatchUiState())
+    // เปิดจากการลากเลือกในปฏิทิน: ใช้ช่วงนั้น ทุกวันในสัปดาห์ (แตะเอาออกทีละวันได้)
+    private val presetFrom = savedState.get<String>("from")?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+    private val presetTo = savedState.get<String>("to")?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+
+    private val _state = MutableStateFlow(
+        if (presetFrom != null && presetTo != null) BatchUiState(
+            startDate = minOf(presetFrom, presetTo),
+            endDate = maxOf(presetFrom, presetTo),
+            days = Recurrence.dayCodes.toSet(),
+            months = Recurrence.allMonths
+        ) else BatchUiState()
+    )
     val state: StateFlow<BatchUiState> = _state.asStateFlow()
 
     fun setMode(m: BatchMode) = _state.update { it.copy(mode = m) }
