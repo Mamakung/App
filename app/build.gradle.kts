@@ -21,10 +21,15 @@ android {
         applicationId = "com.example.smartscheduler"
         minSdk = 26
         targetSdk = 34
-        // เลขเวอร์ชันมาจากลำดับการ build บน GitHub Actions (1, 2, 3, ...) ทุก build ใหม่จึงใหม่กว่าเสมอ
-        val buildNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
-        versionCode = buildNumber
-        versionName = "1.0.$buildNumber"
+        // เลขเวอร์ชัน = จำนวนนาทีตั้งแต่ 1 ม.ค. 2026 (UTC) ตอน build
+        // build ทีหลังจึงใหม่กว่าเสมอ ไม่ว่าจะ build ใน VS Code หรือบน GitHub
+        // GitHub Actions / สคริปต์ release ส่ง VERSION_CODE และ VERSION_NAME มาให้ตรงกับชื่อ Release
+        val nowUtc = java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC)
+        val autoCode = ((nowUtc.toEpochSecond() - 1767225600L) / 60).toInt()
+        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: autoCode
+        versionName = System.getenv("VERSION_NAME") ?: nowUtc
+            .withZoneSameInstant(java.time.ZoneId.of("Asia/Bangkok"))
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyyy.MM.dd-HHmm"))
 
         // repo ที่แอปไปเช็กอัปเดต (GitHub Releases) ต้องเป็น public
         buildConfigField("String", "UPDATE_REPO", "\"${System.getenv("UPDATE_REPO") ?: "Mamakung/App"}\"")

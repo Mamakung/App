@@ -33,6 +33,8 @@ data class AppColors(
     val ink: Color,
     val muted: Color,
     val line: Color,
+    /** ขอบของปุ่ม/ช่องที่กดได้ (ต้องเห็นชัด 3:1) ต่างจาก line ที่ใช้เป็นเส้นแบ่ง */
+    val outline: Color,
     val work: Color,
     val workBg: Color,
     val rest: Color,
@@ -50,18 +52,19 @@ private val LightApp = AppColors(
     ground = Color(0xFFF2F4F0),
     surface = Color(0xFFFFFFFF),
     ink = Color(0xFF18302C),
-    muted = Color(0xFF5F6F6B),
+    muted = Color(0xFF5A6A66),
     line = Color(0xFFD9E0DB),
+    outline = Color(0xFF828F8A),
     work = Color(0xFF2B44C4),
     workBg = Color(0xFFE4E8FA),
     rest = Color(0xFF2F9E62),
     restBg = Color(0xFFDDF1E5),
-    task = Color(0xFFC9821C),
+    task = Color(0xFFB5741A),
     taskBg = Color(0xFFF8ECD6),
     study = Color(0xFF9B3E8F),
     studyBg = Color(0xFFF5E2F1),
     now = Color(0xFFE0473A),
-    up = Color(0xFF1E8A52),
+    up = Color(0xFF187A48),
     down = Color(0xFFC8382E)
 )
 
@@ -71,6 +74,7 @@ private val DarkApp = AppColors(
     ink = Color(0xFFE6EEEA),
     muted = Color(0xFF9AA9A4),
     line = Color(0xFF2C3833),
+    outline = Color(0xFF66756F),
     work = Color(0xFF8FA0FF),
     workBg = Color(0xFF1F2856),
     rest = Color(0xFF63D094),
@@ -104,7 +108,7 @@ private fun schemeFrom(c: AppColors, dark: Boolean) = if (dark) darkColorScheme(
     surface = c.surface, onSurface = c.ink,
     surfaceVariant = c.line, onSurfaceVariant = c.muted,
     surfaceContainer = c.surface, surfaceContainerHigh = c.surface, surfaceContainerLow = c.ground,
-    outline = c.line, outlineVariant = c.line,
+    outline = c.outline, outlineVariant = c.line,
     error = c.down
 ) else lightColorScheme(
     primary = c.ink, onPrimary = Color.White,
@@ -116,7 +120,7 @@ private fun schemeFrom(c: AppColors, dark: Boolean) = if (dark) darkColorScheme(
     surface = c.surface, onSurface = c.ink,
     surfaceVariant = Color(0xFFE3E8E4), onSurfaceVariant = c.muted,
     surfaceContainer = c.surface, surfaceContainerHigh = c.surface, surfaceContainerLow = c.ground,
-    outline = c.line, outlineVariant = c.line,
+    outline = c.outline, outlineVariant = c.line,
     error = c.down
 )
 

@@ -1,0 +1,92 @@
+name: Build & Release APK
+
+# ทุกครั้งที่ push ขึ้น main จะ build APK, ตั้งเลขเวอร์ชันใหม่ และสร้าง GitHub Release
+# แอปที่ติดตั้งไว้จะเห็น Release ใหม่และให้กดอัปเดตจากในแอปได้
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # จำเป็นสำหรับสร้าง Release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      UPDATE_REPO: ${{ github.repository }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # เลขเวอร์ชัน = นาทีตั้งแต่ 1 ม.ค. 2026 (UTC) สูตรเดียวกับ build ในเครื่อง จึงใหม่กว่าเสมอ
+      - name: Compute version
+        run: |
+          echo "VERSION_CODE=$(( ( $(date -u +%s) - 1767225600 ) / 60 ))" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=$(TZ=Asia/Bangkok date +%Y.%m.%d-%H%M)" >> "$GITHUB_ENV"
+
+      # กุญแจเซ็นแอป: ทุกเวอร์ชันต้องใช้กุญแจเดียวกัน ไม่งั้นอัปเดตทับไม่ได้
+      - name: Restore signing key
+        env:
+          SIGNING_KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$SIGNING_KEYSTORE_B64" ]; then
+            echo "::error title=ยังไม่ได้ตั้ง secret SIGNING_KEYSTORE_B64::ไปที่ Settings > Secrets and variables > Actions แล้วเพิ่ม secret ชื่อ SIGNING_KEYSTORE_B64 (เนื้อหาจากไฟล์ SIGNING_KEYSTORE_B64.txt)"
+            exit 1
+          fi
+          echo "$SIGNING_KEYSTORE_B64" | base64 -d > app/release.keystore
+
+      # ไม่บังคับ: ใส่ secret GOOGLE_SERVICES_JSON เพื่อเปิดระบบล็อกอิน Firebase
+      - name: Add google-services.json (optional)
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            echo "$GOOGLE_SERVICES_JSON" > app/google-services.json
+          fi
+
+      - name: Build release APK
+        env:
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+        run: |
+          # ถ้าไม่ได้ตั้ง secret รหัสผ่าน ให้ build.gradle ใช้ค่าเริ่มต้น
+          [ -z "$SIGNING_STORE_PASSWORD" ] && unset SIGNING_STORE_PASSWORD
+          chmod +x gradlew
+          ./gradlew assembleRelease --stacktrace
+          cp app/build/outputs/apk/release/app-release.apk "SmartScheduler-$VERSION_NAME.apk"
+
+      - name: Upload APK (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: SmartScheduler-${{ env.VERSION_NAME }}
+          path: SmartScheduler-*.apk
+          if-no-files-found: error
+
+      # ข้อความ commit (ไม่รวมบรรทัด Co-Authored-By ฯลฯ) = "มีอะไรใหม่" ที่แสดงในแอป
+      - name: Release notes
+        env:
+          MSG: ${{ github.event.head_commit.message }}
+        run: |
+          NOTES=$(printf '%s\n' "$MSG" | sed -e '/^Co-Authored-By:/d' -e '/^Claude-Session:/d' -e '/^Signed-off-by:/d' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')
+          [ -z "$NOTES" ] && NOTES="อัปเดตใหม่"
+          { echo "NOTES<<__END__"; printf '%s\n' "$NOTES"; echo "__END__"; } >> "$GITHUB_ENV"
+
+      # tag build-<versionCode>: แอปอ่านเลขท้าย tag มาเทียบกับเวอร์ชันของตัวเอง
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ env.VERSION_CODE }}
+          name: SmartScheduler ${{ env.VERSION_NAME }}
+          body: ${{ env.NOTES }}
+          files: SmartScheduler-*.apk
+          make_latest: true

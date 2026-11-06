@@ -92,7 +92,7 @@ class UpdateRepository @Inject constructor(
             if (code <= currentVersionCode) return@withContext null
             AppUpdate(
                 versionCode = code,
-                versionName = release.tag.removePrefix("v"),
+                versionName = release.name?.removePrefix("SmartScheduler ")?.ifBlank { null } ?: release.tag,
                 notes = release.body?.trim().orEmpty(),
                 apkUrl = apk.downloadUrl,
                 sizeBytes = apk.size
@@ -144,7 +144,7 @@ class UpdateRepository @Inject constructor(
     }
 
     companion object {
-        /** "v1.0.42" → 42 */
-        fun versionCodeFromTag(tag: String): Int? = tag.substringAfterLast('.').toIntOrNull()
+        /** เลขท้าย tag คือ versionCode: "build-445210" → 445210, "v1.0.42" → 42 */
+        fun versionCodeFromTag(tag: String): Int? = tag.takeLastWhile { it.isDigit() }.toIntOrNull()
     }
 }

@@ -3,7 +3,7 @@ package com.example.smartscheduler.navigation
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.ShowChart
-import androidx.compose.material.icons.filled.Today
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -49,7 +49,7 @@ object Routes {
 private data class TabItem(val route: String, val label: String, val icon: ImageVector)
 
 private val tabs = listOf(
-    TabItem(Routes.DASHBOARD, "วันนี้", Icons.Filled.Today),
+    TabItem(Routes.DASHBOARD, "ปฏิทิน", Icons.Filled.CalendarMonth),
     TabItem(Routes.ROUTINE, "กิจวัตร", Icons.Filled.Repeat),
     TabItem(Routes.STOCK_HUB, "หุ้น", Icons.Filled.ShowChart)
 )

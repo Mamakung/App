@@ -1,0 +1,171 @@
+<!doctype html><html lang="th"><head><meta charset="utf-8"><style>
+@font-face{font-family:"Plex Thai";src:url("f/IBMPlexSansThai-Regular.ttf");font-weight:400}
+@font-face{font-family:"Plex Thai";src:url("f/IBMPlexSansThai-Medium.ttf");font-weight:500}
+@font-face{font-family:"Plex Thai";src:url("f/IBMPlexSansThai-SemiBold.ttf");font-weight:600}
+@font-face{font-family:"Plex Thai";src:url("f/IBMPlexSansThai-Bold.ttf");font-weight:600}
+:root{
+  --ground:#F2F4F0; --surface:#FFFFFF; --ink:#18302C; --muted:#5F6F6B; --line:#D9E0DB;
+  --work:#2B44C4; --work-bg:#E4E8FA; --break:#2F9E62; --break-bg:#DDF1E5;
+  --task:#C9821C; --task-bg:#F8ECD6; --now:#E0473A; --up:#1E8A52; --down:#C8382E;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#C9CFCB;font-family:"Plex Thai",sans-serif;line-height:1.6;letter-spacing:.1px;color:var(--ink);display:flex;gap:40px;padding:40px;flex-wrap:wrap}
+.phone{width:390px;height:844px;background:var(--ground);border-radius:44px;overflow:hidden;position:relative;display:flex;flex-direction:column}
+.status{height:44px;display:flex;justify-content:space-between;align-items:center;padding:0 28px;font-size:14px;font-weight:600}
+.scroll{flex:1;overflow:hidden;padding:0 20px}
+.nav{height:80px;background:var(--surface);border-top:1px solid var(--line);display:flex;justify-content:space-around;align-items:flex-start;padding-top:10px}
+.nav div{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px;color:var(--muted);width:90px}
+.nav .on{color:var(--ink);font-weight:600}
+.nav .ic{width:56px;height:30px;border-radius:15px;display:flex;align-items:center;justify-content:center}
+.nav .on .ic{background:var(--ink);}
+.nav svg{width:20px;height:20px}
+h1{font-size:28px;line-height:1.35;font-weight:600;letter-spacing:-.2px}
+.sub{color:var(--muted);font-size:14px;line-height:1.7}
+.tnum{font-variant-numeric:tabular-nums}
+
+/* today header */
+.today-head{padding:10px 0 20px}
+.today-head .date{font-size:15px;color:var(--muted)}
+.nowline{margin-top:12px;display:flex;align-items:baseline;gap:10px}
+.nowline .big{font-size:38px;font-weight:600;letter-spacing:-.4px;line-height:1.3}
+.nowline .of{font-size:15px;color:var(--muted)}
+.now-what{font-size:16px;margin-top:4px;line-height:1.6}
+.now-what b{color:var(--work)}
+.progress{display:flex;gap:4px;margin-top:18px}
+.progress span{height:6px;border-radius:3px;flex:1;background:var(--line)}
+.progress .d{background:var(--ink)}
+
+/* week strip */
+.week{display:grid;grid-template-columns:repeat(7,1fr);margin:4px -4px 18px;text-align:center}
+.week div{padding:8px 0;border-radius:16px;font-size:12px;color:var(--muted)}
+.week b{display:block;font-size:17px;color:var(--ink);margin-top:2px}
+.week .sel{background:var(--ink);color:#C9D4D0}
+.week .sel b{color:#fff}
+.week .off b{color:#A7B2AE}
+
+/* ruler */
+.ruler{position:relative;margin-left:44px;border-left:1px solid var(--line)}
+.hr{position:absolute;left:-44px;width:36px;text-align:right;font-size:11px;color:var(--muted);transform:translateY(-7px)}
+.tick{position:absolute;left:0;right:0;border-top:1px dashed #E3E8E4}
+.blk{position:absolute;left:10px;right:0;border-radius:12px;padding:10px 14px;overflow:hidden;display:flex;justify-content:space-between;gap:8px}
+.blk .t{font-size:15px;font-weight:600;line-height:1.45}
+.blk .m{font-size:12px;color:var(--muted);margin-top:3px;letter-spacing:.2px}
+.blk.work{background:var(--work-bg);border-left:4px solid var(--work)}
+.blk.break{background:repeating-linear-gradient(135deg,var(--break-bg) 0 6px,#EAF7EF 6px 12px);border-left:4px solid var(--break)}
+.blk.task{background:var(--task-bg);border-left:4px solid var(--task)}
+.blk.done{opacity:.55}
+.blk.done .t{text-decoration:line-through}
+.blk.thin{padding:4px 12px;align-items:center}
+.blk.thin .t{font-size:13px}
+.chk{width:22px;height:22px;border-radius:50%;border:2px solid #9AA8A4;flex:none}
+.chk.y{background:var(--ink);border-color:var(--ink);position:relative}
+.chk.y:after{content:"";position:absolute;left:6px;top:2px;width:5px;height:10px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.nowbar{position:absolute;left:-5px;right:0;border-top:2px solid var(--now);z-index:3}
+.nowbar:before{content:"";position:absolute;left:-1px;top:-6px;width:10px;height:10px;border-radius:50%;background:var(--now)}
+.wake{position:absolute;left:8px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.fab{position:absolute;right:20px;bottom:96px;height:52px;padding:0 20px;border-radius:26px;background:var(--ink);color:#fff;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600}
+
+/* routine */
+.sec{margin-top:30px}
+.sec h2{font-size:17px;font-weight:600;margin-bottom:12px;line-height:1.4}
+.panel{background:var(--surface);border-radius:20px;padding:20px}
+.wakerow{display:flex;justify-content:space-between;align-items:center}
+.wakerow .v{font-size:30px;font-weight:600}
+.btn-ghost{border:1px solid var(--line);border-radius:12px;padding:8px 14px;font-size:14px}
+.grid7{display:grid;grid-template-columns:repeat(7,1fr);gap:7px}
+.grid6{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}
+.cell{height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:14px;border:1px solid var(--line);color:var(--muted)}
+.cell.on{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:600}
+.hint{font-size:13px;color:var(--muted);margin-top:12px;line-height:1.65}
+.daystrip{position:relative;height:28px;border-radius:8px;background:#E8ECE9;overflow:hidden;margin-top:14px}
+.daystrip span{position:absolute;top:0;bottom:0}
+.axis{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:6px}
+.row{display:flex;align-items:center;gap:14px;padding:15px 0;border-top:1px solid var(--line)}
+.row:first-child{border-top:none}
+.row .bar{width:4px;align-self:stretch;border-radius:2px}
+.row .time{width:104px;font-size:14px;font-weight:600}
+.row .name{flex:1;font-size:15px}
+.row .dur{font-size:13px;color:var(--muted)}
+.legend{display:flex;gap:18px;font-size:13px;color:var(--muted);margin-top:14px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.addrow{display:flex;gap:8px;margin-top:12px}
+.addrow div{flex:1;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600}
+
+/* batch */
+.topbar{display:flex;align-items:center;gap:14px;padding:6px 0 10px;font-size:18px;font-weight:600}
+.seg{display:flex;background:#E3E8E4;border-radius:14px;padding:4px}
+.seg div{flex:1;text-align:center;padding:9px 0;border-radius:11px;font-size:14px;color:var(--muted)}
+.seg .on{background:var(--surface);color:var(--ink);font-weight:600}
+.dates{display:flex;gap:8px}
+.dates div{flex:1;border:1px solid var(--line);border-radius:12px;padding:8px 12px;background:var(--surface)}
+.dates small{display:block;font-size:12px;color:var(--muted)}
+.dates b{font-size:15px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center;font-size:13px}
+.cal .h{color:var(--muted);font-size:12px;padding-bottom:2px}
+.cal .d{height:32px;display:flex;align-items:center;justify-content:center;border-radius:9px;color:#A7B2AE}
+.cal .d.hit{background:var(--work-bg);color:var(--work);font-weight:600}
+.cal .d.x{visibility:hidden}
+.bottomcta{position:absolute;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);padding:14px 20px 30px}
+.bottomcta p{font-size:14px;color:var(--muted);margin-bottom:10px}
+.bottomcta p b{color:var(--ink)}
+.cta{height:52px;border-radius:16px;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600}
+
+/* stocks */
+.mkt{display:flex;justify-content:space-between;align-items:center;margin-top:16px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--up);margin-right:6px}
+.brief li{list-style:none;padding:13px 0;border-top:1px solid var(--line);font-size:14px;line-height:1.7;display:flex;gap:10px}
+.brief li:first-child{border-top:none;padding-top:0}
+.brief li:before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--ink);margin-top:10px}
+.wl{display:flex;align-items:center;padding:15px 0;border-top:1px solid var(--line)}
+.wl:first-child{border-top:none}
+.wl .sym{width:76px;font-size:16px;font-weight:600}
+.wl .co{flex:1;font-size:13px;color:var(--muted)}
+.wl .px{text-align:right;font-size:15px;font-weight:600}
+.wl .ch{text-align:right;font-size:13px;font-weight:600;margin-top:2px}
+.up{color:var(--up)} .down{color:var(--down)}
+.add{display:flex;justify-content:space-between;align-items:center}
+.add span{font-size:14px;font-weight:600;color:var(--work)}
+
+:root{--study:#9B3E8F;--study-bg:#F5E2F1}
+.blk.cls{background:var(--study-bg);border-left:4px solid var(--study)}
+.card-opt{display:flex;gap:12px;align-items:flex-start}
+.ico{width:24px;height:24px;border-radius:6px;flex:none;margin-top:2px}
+.toggle{width:46px;height:28px;border-radius:14px;background:var(--ink);position:relative;flex:none}
+.toggle:after{content:"";position:absolute;right:3px;top:3px;width:22px;height:22px;border-radius:50%;background:#fff}
+.row .det{font-size:12px;color:var(--muted);line-height:1.5}
+.note{background:var(--task-bg);border-radius:12px;padding:12px 14px;font-size:13px;line-height:1.6;margin-top:14px}
+</style></head><body><div class="phone" id="imp1"><div class="status"><span>02:20</span><span>●●● 82%</span></div><div class="scroll">
+<div class="topbar"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#18302C" stroke-width="2.2"/></svg>นำเข้าตารางจากไฟล์</div>
+<h1 style="font-size:24px;margin-top:10px">ให้แอปจัดตารางจากไฟล์</h1>
+<p class="sub" style="margin-top:8px">เลือกรูปถ่ายหรือ PDF ของตารางเรียน ตารางงาน หรือตารางเวร แอปจะอ่านทุกช่อง แล้วลงให้ทุกสัปดาห์ตลอดช่วงที่เลือก คุณตรวจและแก้ได้ก่อนบันทึก</p>
+<div class="cta" style="margin-top:22px">เลือกไฟล์ตาราง</div>
+<div class="panel" style="margin-top:26px">
+ <div class="card-opt"><span class="ico" style="background:var(--study-bg);border:2px solid var(--study)"></span><div><div style="font-weight:600;font-size:15px">รูปภาพหรือ PDF</div><div class="hint" style="margin-top:2px">AI อ่านตารางให้ ต้องใส่ Claude API key ครั้งแรกที่ใช้ (มีค่าใช้จ่ายตามการใช้งาน)</div></div></div>
+ <div style="border-top:1px solid var(--line);margin:16px 0"></div>
+ <div class="card-opt"><span class="ico" style="background:var(--work-bg);border:2px solid var(--work)"></span><div><div style="font-weight:600;font-size:15px">ไฟล์ CSV</div><div class="hint" style="margin-top:2px">อ่านในเครื่อง ไม่ต้องใช้ AI คอลัมน์: วัน, เริ่ม, สิ้นสุด, วิชา, รหัสวิชา, ห้อง, ครู</div></div></div>
+</div></div></div><div class="phone" id="imp2"><div class="status"><span>02:21</span><span>●●● 82%</span></div><div class="scroll" style="padding-bottom:140px">
+<div class="topbar"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#18302C" stroke-width="2.2"/></svg>นำเข้าตารางจากไฟล์</div>
+<h1 style="font-size:24px;margin-top:6px">ตรวจก่อนบันทึก</h1>
+<p class="sub">จาก ตารางเรียน ชอ.3.jpg  แตะรายการเพื่อแก้ชื่อหรือเวลา</p>
+<div class="sec" style="margin-top:18px"><h2>ภาคเรียน</h2>
+<div class="dates"><div><small>วันเปิดภาค</small><b>19 ต.ค. 2569</b></div><div style="display:flex;align-items:center;justify-content:space-between;padding:6px 14px"><span style="font-size:22px">−</span><span style="text-align:center"><small>เรียน</small><b>17 สัปดาห์</b></span><span style="font-size:22px">+</span></div></div>
+<div style="font-size:14px;margin-top:10px">เรียนถึง 14 ก.พ. 2570  สอบปลายภาคสัปดาห์ที่ 18 (15–21 ก.พ. 2570)</div>
+<div class="hint" style="margin-top:2px">ตอนนี้สัปดาห์ที่ 3 จะลงตารางตั้งแต่วันนี้ วันที่ผ่านมาแล้วไม่แก้</div></div>
+<div class="sec" style="margin-top:20px"><h2>วิชาที่สอบในสัปดาห์ที่ 17</h2><div class="hint" style="margin:-6px 0 10px">วิชาที่เลือกจะเรียนถึงสัปดาห์ที่ 16 สัปดาห์ที่ 17 เว้นช่วงนั้นไว้ให้ใส่เวลาสอบเอง</div><span style="display:inline-block;border:1px solid var(--line);border-radius:8px;padding:5px 12px;font-size:13px;margin:0 6px 8px 0;background:#fff">ระบบเสียง</span><span style="display:inline-block;border:1px solid var(--line);border-radius:8px;padding:5px 12px;font-size:13px;margin:0 6px 8px 0;background:#fff">งานนิวเมติกส์และไฮดรอลิกส์…</span><span style="display:inline-block;border:1px solid var(--line);border-radius:8px;padding:5px 12px;font-size:13px;margin:0 6px 8px 0;background:#fff">โปรแกรมเมเบิลลอจิกคอนโทรล</span><span style="display:inline-block;border:1px solid var(--line);border-radius:8px;padding:5px 12px;font-size:13px;margin:0 6px 8px 0;background:#fff">โครงงานด้านอิเล็กทรอนิกส์</span><span style="display:inline-block;border:1px solid var(--line);border-radius:8px;padding:5px 12px;font-size:13px;margin:0 6px 8px 0;background:#fff">อินเตอร์เฟซเบื้องต้น</span></div>
+<div style="display:flex;align-items:center;gap:12px;margin-top:16px"><div style="flex:1"><div style="font-size:15px">แทนที่ตารางเดิมในวันที่มีเรียน</div><div class="hint" style="margin-top:0">ช่วงทำงาน/พักของกิจวัตรในวันเหล่านั้นจะถูกแทนด้วยตารางนี้</div></div><span class="toggle"></span></div>
+<div class="sec" style="margin-top:22px"><h2>วันจันทร์</h2><div class="panel" style="padding:4px 18px">
+<div class="row"><span class="bar" style="background:var(--study)"></span><span class="time tnum">08:00–08:15</span><div style="flex:1"><div class="name" style="font-size:15px;line-height:1.45">กิจกรรมหน้าเสาธง</div><div class="det">15 นาที</div></div></div>
+<div class="row"><span class="bar" style="background:var(--study)"></span><span class="time tnum">08:15–09:15</span><div style="flex:1"><div class="name" style="font-size:15px;line-height:1.45">Home Room</div><div class="det">ครูณัฐชา</div></div></div>
+<div class="row"><span class="bar" style="background:var(--study)"></span><span class="time tnum">09:15–12:15</span><div style="flex:1"><div class="name" style="font-size:15px;line-height:1.45">ระบบเสียง</div><div class="det">20105-2012  ห้อง 7102  ครูต่วนมะรูดี</div></div></div>
+<div class="row"><span class="bar" style="background:var(--study)"></span><span class="time tnum">13:15–15:15</span><div style="flex:1"><div class="name" style="font-size:15px;line-height:1.45">ระบบเสียง</div><div class="det">20105-2012  ห้อง 7102  ครูต่วนมะรูดี</div></div></div>
+</div></div>
+<div class="sec" style="margin-top:22px"><h2>วันอังคาร</h2><div class="panel" style="padding:4px 18px">
+<div class="row"><span class="bar" style="background:var(--study)"></span><span class="time tnum">08:15–12:15</span><div style="flex:1"><div class="name" style="font-size:15px;line-height:1.45">งานนิวเมติกส์และไฮดรอลิกส์เบื้องต้น</div><div class="det">20100-1007  ห้อง 7102  ครูต่วนมะรูดี</div></div></div>
+</div></div>
+</div><div class="bottomcta"><p>18 รายการต่อสัปดาห์ ลงให้ 87 วัน</p><div class="cta">บันทึกลงตาราง</div></div></div><div class="phone" id="imp3"><div class="status"><span>10:40</span><span>●●● 82%</span></div><div class="scroll">
+<div class="today-head"><div class="date" style="display:flex;justify-content:space-between"><span>วันจันทร์ที่ 9 พฤศจิกายน<br><span style="color:var(--study);font-size:13px;font-weight:500">สัปดาห์ที่ 4 จาก 17</span></span><span style="display:flex;gap:18px"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z M14 3v5h5 M12 18v-6 M9 15l3-3 3 3" fill="none" stroke="#18302C" stroke-width="1.8"/></svg></span></div>
+<div class="nowline"><span class="big tnum">1 ชม. 35 นาที</span></div>
+<div class="now-what">ก่อนจบ <b style="color:var(--study)">ระบบเสียง</b> แล้วพักเที่ยง</div>
+<div class="progress"><span class="d"></span><span class="d"></span><span></span><span></span></div></div>
+<div class="week"><div class="off">อา<b>8</b></div><div class="sel">จ<b>9</b></div><div>อ<b>10</b></div><div>พ<b>11</b></div><div>พฤ<b>12</b></div><div>ศ<b>13</b></div><div>ส<b>14</b></div></div>
+<div class="ruler" style="height:720px"><div class="hr tnum" style="top:0.0px">08:00</div><div class="tick" style="top:0.0px"></div><div class="hr tnum" style="top:84.0px">09:00</div><div class="tick" style="top:84.0px"></div><div class="hr tnum" style="top:168.0px">10:00</div><div class="tick" style="top:168.0px"></div><div class="hr tnum" style="top:251.99999999999997px">11:00</div><div class="tick" style="top:251.99999999999997px"></div><div class="hr tnum" style="top:336.0px">12:00</div><div class="tick" style="top:336.0px"></div><div class="hr tnum" style="top:420.0px">13:00</div><div class="tick" style="top:420.0px"></div><div class="hr tnum" style="top:503.99999999999994px">14:00</div><div class="tick" style="top:503.99999999999994px"></div><div class="hr tnum" style="top:588.0px">15:00</div><div class="tick" style="top:588.0px"></div><div class="blk cls thin" style="top:1.0px;height:18.0px;padding:0 14px"><div class="t" style="font-size:11px;line-height:1.2">กิจกรรมหน้าเสาธง</div><div style="display:flex;gap:8px;align-items:center"><div class="m tnum" style="margin:0;font-size:11px">08:00–08:15</div><span class="chk" style="width:14px;height:14px;border-width:1.5px"></span></div></div><div class="blk cls" style="top:22.0px;height:81.0px"><div><div class="t">Home Room</div><div class="m tnum">08:15–09:15  ครูณัฐชา</div></div><span class="chk"></span></div><div class="blk cls" style="top:106.0px;height:248.99999999999997px"><div><div class="t">ระบบเสียง</div><div class="m tnum">09:15–12:15  20105-2012  ห้อง 7102  ครูต่วนมะรูดี</div></div><span class="chk"></span></div><div class="blk cls" style="top:442.0px;height:165.0px"><div><div class="t">ระบบเสียง</div><div class="m tnum">13:15–15:15  20105-2012  ห้อง 7102  ครูต่วนมะรูดี</div></div><span class="chk"></span></div><div class="nowbar" style="top:224.0px"></div></div></div><div class="nav"><div class="on"><span class="ic"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="3" fill="none" stroke="#fff" stroke-width="2"/><path d="M4 10h16" stroke="#fff" stroke-width="2"/></svg></span>วันนี้</div><div><span class="ic"><svg viewBox="0 0 24 24"><path d="M5 9a7 7 0 0 1 12-3l2-2v6h-6l2-2a5 5 0 0 0-8 1M19 15a7 7 0 0 1-12 3l-2 2v-6h6l-2 2a5 5 0 0 0 8-1" fill="none" stroke="#5F6F6B" stroke-width="2"/></svg></span>กิจวัตร</div><div><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 17l5-5 4 4 7-8" fill="none" stroke="#5F6F6B" stroke-width="2"/></svg></span>หุ้น</div></div></div></body></html>

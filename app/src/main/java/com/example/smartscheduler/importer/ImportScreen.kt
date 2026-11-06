@@ -16,6 +16,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -272,7 +274,7 @@ fun ImportScreen(onBack: () -> Unit, onDone: () -> Unit, viewModel: ImportViewMo
                         if (state.savedDays != null) {
                             Text("ลงตารางให้ ${state.savedDays} วันแล้ว", style = MaterialTheme.typography.bodyMedium, color = c.muted)
                             Spacer(Modifier.height(10.dp))
-                            InkButton("ไปที่หน้าวันนี้", onClick = onDone)
+                            InkButton("ดูในปฏิทิน", onClick = onDone)
                         } else {
                             Text(
                                 "${state.entries.size} รายการต่อสัปดาห์ ลงให้ ${state.activeDays} วัน",
@@ -408,12 +410,12 @@ private fun SemesterSection(state: ImportUiState, viewModel: ImportViewModel) {
                 .padding(horizontal = 4.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = { viewModel.changeWeeks(-1) }) { Text("−", style = MaterialTheme.typography.titleLarge) }
+            IconButton(onClick = { viewModel.changeWeeks(-1) }) { Icon(Icons.Filled.Remove, contentDescription = "ลดจำนวนสัปดาห์", tint = c.ink) }
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                 Hint("เรียน")
                 Text("${state.studyWeeks} สัปดาห์", style = MaterialTheme.typography.titleSmall)
             }
-            IconButton(onClick = { viewModel.changeWeeks(1) }) { Text("+", style = MaterialTheme.typography.titleLarge) }
+            IconButton(onClick = { viewModel.changeWeeks(1) }) { Icon(Icons.Filled.Add, contentDescription = "เพิ่มจำนวนสัปดาห์", tint = c.ink) }
         }
     }
     Spacer(Modifier.height(10.dp))

@@ -18,6 +18,13 @@ import javax.inject.Singleton
 
 private const val ALARM_SLOTS = 40
 
+/** วันทำซ้ำของรายการนี้ (ถ้าไม่ได้ตั้งเอง ใช้ค่าเริ่มต้นของกิจวัตร) */
+fun RoutineTemplateTaskEntity.effectiveDays(template: RoutineTemplateEntity): String = repeatDays ?: template.appliesToDaysOfWeek
+fun RoutineTemplateTaskEntity.effectiveMonths(template: RoutineTemplateEntity): String = repeatMonths ?: template.appliesToMonths
+
+fun RoutineTemplateTaskEntity.repeatsOn(date: LocalDate, template: RoutineTemplateEntity): Boolean =
+    Recurrence.matches(date, effectiveDays(template), effectiveMonths(template))
+
 private fun RoutineTemplateTaskEntity.toScheduleTask(dayId: Long) = ScheduleTaskEntity(
     dayId = dayId,
     title = title,
@@ -42,6 +49,9 @@ class ScheduleRepository @Inject constructor(
 
     fun observeDay(uid: String, date: LocalDate): Flow<ScheduleDayWithTasks?> =
         scheduleDao.observeDay(uid, date.toEpochDay())
+
+    fun observeRange(uid: String, from: LocalDate, to: LocalDate): Flow<List<ScheduleDayWithTasks>> =
+        scheduleDao.observeRange(uid, from.toEpochDay(), to.toEpochDay())
 
     fun observeActiveTemplate(uid: String): Flow<RoutineTemplateEntity?> =
         routineDao.observeTemplates(uid).map { list -> list.firstOrNull { it.isActiveDefault } }
@@ -115,6 +125,13 @@ class ScheduleRepository @Inject constructor(
         afterTemplateChange(uid, templateId)
     }
 
+    /** ตั้งวันทำซ้ำเดียวกันให้หลายรายการพร้อมกัน */
+    suspend fun setRepeatForTasks(uid: String, templateId: Long, taskIds: List<Long>, daysCsv: String, monthsCsv: String) {
+        if (taskIds.isEmpty()) return
+        routineDao.setRepeat(taskIds, daysCsv, monthsCsv)
+        afterTemplateChange(uid, templateId)
+    }
+
     private suspend fun afterTemplateChange(uid: String, templateId: Long) {
         propagateTemplateToFutureDays(uid, templateId)
         generateRange(uid, LocalDate.now(), 30)
@@ -135,8 +152,9 @@ class ScheduleRepository @Inject constructor(
             if (oldTasks.any { it.status != "PENDING" }) continue
             val date = LocalDate.ofEpochDay(day.dateEpochDay)
             alarmScheduler.cancelForDay(day.dayId, ALARM_SLOTS)
-            if (Recurrence.matches(date, template.appliesToDaysOfWeek, template.appliesToMonths)) {
-                fillDay(day, template, templateTasks, date)
+            val todays = templateTasks.filter { it.repeatsOn(date, template) }
+            if (todays.isNotEmpty()) {
+                fillDay(day, template, todays, date)
             } else {
                 scheduleDao.deleteDay(day.dayId)
             }
@@ -153,9 +171,9 @@ class ScheduleRepository @Inject constructor(
         db.withTransaction {
             if (scheduleDao.getDayOnce(uid, date.toEpochDay()) != null) return@withTransaction
             val template = routineDao.getActiveTemplate(uid) ?: return@withTransaction
-            if (!Recurrence.matches(date, template.appliesToDaysOfWeek, template.appliesToMonths)) {
-                return@withTransaction
-            }
+            // แต่ละรายการมีวันทำซ้ำของตัวเอง สร้างวันเฉพาะเมื่อมีอย่างน้อยหนึ่งรายการตรงวันนี้
+            val todays = routineDao.getTemplateTasksOnce(template.templateId).filter { it.repeatsOn(date, template) }
+            if (todays.isEmpty()) return@withTransaction
             val dayId = scheduleDao.insertDay(
                 ScheduleDayEntity(
                     ownerUid = uid,
@@ -167,7 +185,7 @@ class ScheduleRepository @Inject constructor(
             )
             if (dayId == -1L) return@withTransaction
             val day = scheduleDao.getDayById(dayId) ?: return@withTransaction
-            fillDay(day, template, routineDao.getTemplateTasksOnce(template.templateId), date)
+            fillDay(day, template, todays, date)
         }
     }
 

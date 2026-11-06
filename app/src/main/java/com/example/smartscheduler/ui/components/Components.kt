@@ -1,8 +1,15 @@
 package com.example.smartscheduler.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,7 +25,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.example.smartscheduler.data.local.entity.RoutineTemplateEntity
 import com.example.smartscheduler.data.local.entity.RoutineTemplateTaskEntity
+import com.example.smartscheduler.data.repository.effectiveDays
+import com.example.smartscheduler.data.repository.effectiveMonths
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import com.example.smartscheduler.data.local.entity.ScheduleTaskEntity
 import com.example.smartscheduler.domain.model.Recurrence
 import com.example.smartscheduler.domain.model.TaskKind
@@ -37,7 +49,10 @@ data class TaskDraft(
     val kind: TaskKind = TaskKind.TASK,
     val startMin: Int = 9 * 60,
     val endMin: Int = 10 * 60,
-    val reminder: Boolean = true
+    val reminder: Boolean = true,
+    /** ใช้กับกิจวัตรเท่านั้น: null = ไม่แสดงตัวเลือกวันทำซ้ำในหน้าต่างแก้ไข */
+    val repeatDays: Set<String>? = null,
+    val repeatMonths: Set<Int>? = null
 )
 
 /** ช่วงเวลาแบบย่อ ใช้วาดเส้นเวลา/แถบวัน */
@@ -67,6 +82,12 @@ val RoutineTemplateTaskEntity.endMin get() = startMin + durationMinutes
 fun ScheduleTaskEntity.toDraft() = TaskDraft(title, TaskKind.from(kind), startMin, endMin, reminderEnabled)
 fun RoutineTemplateTaskEntity.toDraft() = TaskDraft(title, TaskKind.from(kind), startMin, endMin, reminderEnabled)
 
+/** ฉบับสำหรับหน้ากิจวัตร: ใส่วันทำซ้ำจริงของรายการ (หรือค่าเริ่มต้นของกิจวัตร) */
+fun RoutineTemplateTaskEntity.toDraft(template: RoutineTemplateEntity) = toDraft().copy(
+    repeatDays = Recurrence.parseDays(effectiveDays(template)),
+    repeatMonths = Recurrence.parseMonths(effectiveMonths(template))
+)
+
 fun TaskDraft.toScheduleTask(base: ScheduleTaskEntity?, dayId: Long): ScheduleTaskEntity =
     (base ?: ScheduleTaskEntity(dayId = dayId, title = "", startHour = 0, startMinute = 0)).copy(
         title = title.trim(),
@@ -84,7 +105,9 @@ fun TaskDraft.toTemplateTask(base: RoutineTemplateTaskEntity?, templateId: Long)
         startMinute = startMin % 60,
         durationMinutes = endMin - startMin,
         reminderEnabled = reminder,
-        kind = kind.code
+        kind = kind.code,
+        repeatDays = repeatDays?.let { Recurrence.daysToCsv(it) } ?: base?.repeatDays,
+        repeatMonths = repeatMonths?.let { Recurrence.monthsToCsv(it) } ?: base?.repeatMonths
     )
 
 fun defaultDraft(kind: TaskKind, start: Int = 9 * 60) = TaskDraft(
@@ -176,17 +199,20 @@ fun SegmentedToggle(options: List<String>, selectedIndex: Int, onSelect: (Int) -
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
+            .selectableGroup()
             .padding(4.dp)
     ) {
         options.forEachIndexed { i, label ->
             val on = i == selectedIndex
+            val segBg by animateColorAsState(if (on) AppTheme.colors.surface else Color.Transparent, tween(150), label = "segBg")
             Box(
                 Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(11.dp))
-                    .background(if (on) AppTheme.colors.surface else Color.Transparent)
-                    .clickable { onSelect(i) }
-                    .padding(vertical = 10.dp),
+                    .background(segBg)
+                    .selectable(selected = on, role = Role.Tab, onClick = { onSelect(i) })
+                    .heightIn(min = 48.dp)
+                    .padding(vertical = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -204,30 +230,34 @@ fun SegmentedToggle(options: List<String>, selectedIndex: Int, onSelect: (Int) -
 // Repeat pickers: grid of toggle cells (7 days / 12 months)
 // ============================================================================
 
+/** ระยะห่างระหว่างปุ่มเลือกวัน/เดือน (ui-ux-pro-max: อย่างน้อย 8dp) */
+private val PickerGap = 8.dp
+
 @Composable
 private fun ToggleCell(label: String, on: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val c = AppTheme.colors
     Box(
         modifier
-            .height(44.dp)
+            .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(if (on) c.ink else Color.Transparent)
-            .border(1.dp, if (on) c.ink else c.line, RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick),
+            .border(1.dp, if (on) c.ink else c.outline, RoundedCornerShape(12.dp))
+            .toggleable(value = on, role = Role.Checkbox, onValueChange = { onClick() }),
         contentAlignment = Alignment.Center
     ) {
         Text(
             label,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (on) c.ground else c.muted
+            color = if (on) c.ground else c.ink
         )
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun QuickPicks(items: List<Pair<String, () -> Unit>>) {
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         items.forEach { (label, action) ->
             TextButton(onClick = action, contentPadding = PaddingValues(horizontal = 8.dp)) {
                 Text(label, style = MaterialTheme.typography.labelMedium, color = AppTheme.colors.work)
@@ -239,15 +269,24 @@ private fun QuickPicks(items: List<Pair<String, () -> Unit>>) {
 @Composable
 fun DayOfWeekPicker(selected: Set<String>, onChange: (Set<String>) -> Unit) {
     Column {
-        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            Recurrence.dayCodes.forEach { code ->
-                ToggleCell(
-                    label = Recurrence.dayLabelsTh.getValue(code).trimEnd('.'),
-                    on = code in selected,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    val next = if (code in selected) selected - code else selected + code
-                    if (next.isNotEmpty()) onChange(next)
+        // ช่องห่างกัน 8dp และกว้างอย่างน้อย 44dp: ถ้า 7 ช่องในแถวเดียวไม่พอ แบ่งเป็น 4 + 3
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val perRow = if ((maxWidth - PickerGap * 6) / 7 >= 44.dp) 7 else 4
+            Column(verticalArrangement = Arrangement.spacedBy(PickerGap)) {
+                Recurrence.dayCodes.chunked(perRow).forEach { rowCodes ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(PickerGap)) {
+                        rowCodes.forEach { code ->
+                            ToggleCell(
+                                label = Recurrence.dayLabelsTh.getValue(code).trimEnd('.'),
+                                on = code in selected,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                val next = if (code in selected) selected - code else selected + code
+                                if (next.isNotEmpty()) onChange(next)
+                            }
+                        }
+                        repeat(perRow - rowCodes.size) { Spacer(Modifier.weight(1f)) }
+                    }
                 }
             }
         }
@@ -263,18 +302,23 @@ fun DayOfWeekPicker(selected: Set<String>, onChange: (Set<String>) -> Unit) {
 
 @Composable
 fun MonthPicker(selected: Set<Int>, onChange: (Set<Int>) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        for (row in 0..1) {
-            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                for (col in 1..6) {
-                    val month = row * 6 + col
-                    ToggleCell(
-                        label = Recurrence.monthLabelsTh[month - 1],
-                        on = month in selected,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        val next = if (month in selected) selected - month else selected + month
-                        if (next.isNotEmpty()) onChange(next)
+    Column(verticalArrangement = Arrangement.spacedBy(PickerGap)) {
+        // 6 ช่องต่อแถวเมื่อกว้างพอ (≥ 48dp ต่อช่อง) ไม่งั้น 4 ช่องต่อแถว
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val perRow = if ((maxWidth - PickerGap * 5) / 6 >= 48.dp) 6 else 4
+            Column(verticalArrangement = Arrangement.spacedBy(PickerGap)) {
+                (1..12).chunked(perRow).forEach { rowMonths ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(PickerGap)) {
+                        rowMonths.forEach { month ->
+                            ToggleCell(
+                                label = Recurrence.monthLabelsTh[month - 1],
+                                on = month in selected,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                val next = if (month in selected) selected - month else selected + month
+                                if (next.isNotEmpty()) onChange(next)
+                            }
+                        }
                     }
                 }
             }
@@ -360,14 +404,15 @@ fun TimeRow(
     reminder: Boolean,
     showDivider: Boolean,
     subtitle: String? = null,
-    onClick: () -> Unit
+    /** null = แถวนี้กดเองไม่ได้ (ให้ตัวที่ครอบอยู่จัดการ เช่นโหมดเลือกหลายรายการ) */
+    onClick: (() -> Unit)?
 ) {
     Column {
         if (showDivider) HorizontalDivider(color = AppTheme.colors.line)
         Row(
             Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick)
+                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
                 .height(IntrinsicSize.Min)
                 .padding(vertical = 15.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -376,8 +421,12 @@ fun TimeRow(
             Spacer(Modifier.width(14.dp))
             Text(rangeText(startMin, endMin), style = MaterialTheme.typography.titleSmall, modifier = Modifier.width(110.dp))
             Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 2)
-                Hint(subtitle ?: durationText(endMin - startMin))
+                Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(kind.icon(), contentDescription = kind.label, tint = kind.color(), modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Hint(subtitle ?: durationText(endMin - startMin))
+                }
             }
             if (!reminder) {
                 Icon(
@@ -445,8 +494,8 @@ fun TimeButton(label: String, minutes: Int, modifier: Modifier = Modifier, onPic
     Column(
         modifier
             .clip(RoundedCornerShape(12.dp))
-            .border(1.dp, AppTheme.colors.line, RoundedCornerShape(12.dp))
-            .clickable { show = true }
+            .border(1.dp, AppTheme.colors.outline, RoundedCornerShape(12.dp))
+            .clickable(role = Role.Button, onClickLabel = "เปลี่ยนเวลา") { show = true }
             .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
         Hint(label)
@@ -481,8 +530,8 @@ fun DateButton(label: String, date: LocalDate, modifier: Modifier = Modifier, on
         modifier
             .clip(RoundedCornerShape(12.dp))
             .background(AppTheme.colors.surface)
-            .border(1.dp, AppTheme.colors.line, RoundedCornerShape(12.dp))
-            .clickable { show = true }
+            .border(1.dp, AppTheme.colors.outline, RoundedCornerShape(12.dp))
+            .clickable(role = Role.Button, onClickLabel = "เปลี่ยนวันที่") { show = true }
             .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
         Hint(label)
@@ -502,6 +551,8 @@ fun TaskEditorDialog(
     footnote: String? = null,
     onSave: (TaskDraft) -> Unit,
     onDelete: (() -> Unit)? = null,
+    done: Boolean? = null,
+    onDoneChange: ((Boolean) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     var draft by remember { mutableStateOf(initial ?: TaskDraft()) }
@@ -514,7 +565,10 @@ fun TaskEditorDialog(
         containerColor = AppTheme.colors.surface,
         title = { Text(title) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
                 SegmentedToggle(
                     options = kinds.map { it.label },
                     selectedIndex = kinds.indexOf(draft.kind),
@@ -539,9 +593,29 @@ fun TaskEditorDialog(
                 } else {
                     Text("เวลาสิ้นสุดต้องอยู่หลังเวลาเริ่ม", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                if (done != null && onDoneChange != null) {
+                    Row(
+                        Modifier.fillMaxWidth().toggleable(value = done, role = Role.Checkbox, onValueChange = onDoneChange).heightIn(min = 48.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("ทำเสร็จแล้ว", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                        Checkbox(checked = done, onCheckedChange = null)
+                    }
+                }
+                Row(
+                    Modifier.fillMaxWidth().toggleable(value = draft.reminder, role = Role.Switch, onValueChange = { draft = draft.copy(reminder = it) }).heightIn(min = 48.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text("แจ้งเตือนตอนเริ่ม", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                    Switch(checked = draft.reminder, onCheckedChange = { draft = draft.copy(reminder = it) })
+                    Switch(checked = draft.reminder, onCheckedChange = null)
+                }
+                draft.repeatDays?.let { days ->
+                    Text("ทำซ้ำวัน", style = MaterialTheme.typography.titleSmall)
+                    DayOfWeekPicker(days) { draft = draft.copy(repeatDays = it) }
+                }
+                draft.repeatMonths?.let { months ->
+                    Text("ทำซ้ำเดือน", style = MaterialTheme.typography.titleSmall)
+                    MonthPicker(months) { draft = draft.copy(repeatMonths = it) }
                 }
                 if (footnote != null) Hint(footnote)
             }

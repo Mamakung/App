@@ -1,0 +1,182 @@
+<!doctype html><html lang="th"><head><meta charset="utf-8"><style>
+@font-face{font-family:"Plex Thai";src:url("f/IBMPlexSansThai-Regular.ttf");font-weight:400}
+@font-face{font-family:"Plex Thai";src:url("f/IBMPlexSansThai-Medium.ttf");font-weight:500}
+@font-face{font-family:"Plex Thai";src:url("f/IBMPlexSansThai-SemiBold.ttf");font-weight:600}
+@font-face{font-family:"Plex Thai";src:url("f/IBMPlexSansThai-Bold.ttf");font-weight:600}
+:root{
+  --ground:#F2F4F0; --surface:#FFFFFF; --ink:#18302C; --muted:#5A6A66; --line:#D9E0DB;
+  --work:#2B44C4; --work-bg:#E4E8FA; --break:#2F9E62; --break-bg:#DDF1E5;
+  --task:#B5741A; --task-bg:#F8ECD6; --now:#E0473A; --up:#187A48; --down:#C8382E;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#C9CFCB;font-family:"Plex Thai",sans-serif;line-height:1.6;letter-spacing:.1px;color:var(--ink);display:flex;gap:40px;padding:40px;flex-wrap:wrap}
+.phone{width:390px;height:844px;background:var(--ground);border-radius:44px;overflow:hidden;position:relative;display:flex;flex-direction:column}
+.status{height:44px;display:flex;justify-content:space-between;align-items:center;padding:0 28px;font-size:14px;font-weight:600}
+.scroll{flex:1;overflow:hidden;padding:0 20px}
+.nav{height:80px;background:var(--surface);border-top:1px solid var(--line);display:flex;justify-content:space-around;align-items:flex-start;padding-top:10px}
+.nav div{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px;color:var(--muted);width:90px}
+.nav .on{color:var(--ink);font-weight:600}
+.nav .ic{width:56px;height:30px;border-radius:15px;display:flex;align-items:center;justify-content:center}
+.nav .on .ic{background:var(--ink);}
+.nav svg{width:20px;height:20px}
+h1{font-size:28px;line-height:1.35;font-weight:600;letter-spacing:-.2px}
+.sub{color:var(--muted);font-size:14px;line-height:1.7}
+.tnum{font-variant-numeric:tabular-nums}
+
+/* today header */
+.today-head{padding:10px 0 20px}
+.today-head .date{font-size:15px;color:var(--muted)}
+.nowline{margin-top:12px;display:flex;align-items:baseline;gap:10px}
+.nowline .big{font-size:38px;font-weight:600;letter-spacing:-.4px;line-height:1.3}
+.nowline .of{font-size:15px;color:var(--muted)}
+.now-what{font-size:16px;margin-top:4px;line-height:1.6}
+.now-what b{color:var(--work)}
+.progress{display:flex;gap:4px;margin-top:18px}
+.progress span{height:6px;border-radius:3px;flex:1;background:var(--line)}
+.progress .d{background:var(--ink)}
+
+/* week strip */
+.week{display:grid;grid-template-columns:repeat(7,1fr);margin:4px -4px 18px;text-align:center}
+.week div{padding:8px 0;border-radius:16px;font-size:12px;color:var(--muted)}
+.week b{display:block;font-size:17px;color:var(--ink);margin-top:2px}
+.week .sel{background:var(--ink);color:#C9D4D0}
+.week .sel b{color:#fff}
+.week .off b{color:#A7B2AE}
+
+/* ruler */
+.ruler{position:relative;margin-left:44px;border-left:1px solid var(--line)}
+.hr{position:absolute;left:-44px;width:36px;text-align:right;font-size:11px;color:var(--muted);transform:translateY(-7px)}
+.tick{position:absolute;left:0;right:0;border-top:1px dashed #E3E8E4}
+.blk{position:absolute;left:10px;right:0;border-radius:12px;padding:10px 14px;overflow:hidden;display:flex;justify-content:space-between;gap:8px}
+.blk .t{font-size:15px;font-weight:600;line-height:1.45}
+.blk .m{font-size:12px;color:var(--muted);margin-top:3px;letter-spacing:.2px}
+.blk.work{background:var(--work-bg);border-left:4px solid var(--work)}
+.blk.break{background:repeating-linear-gradient(135deg,var(--break-bg) 0 6px,#EAF7EF 6px 12px);border-left:4px solid var(--break)}
+.blk.task{background:var(--task-bg);border-left:4px solid var(--task)}
+.blk.done{opacity:.55}
+.blk.done .t{text-decoration:line-through}
+.blk.thin{padding:4px 12px;align-items:center}
+.blk.thin .t{font-size:13px}
+.chk{width:22px;height:22px;border-radius:50%;border:2px solid #9AA8A4;flex:none}
+.chk.y{background:var(--ink);border-color:var(--ink);position:relative}
+.chk.y:after{content:"";position:absolute;left:6px;top:2px;width:5px;height:10px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.nowbar{position:absolute;left:-5px;right:0;border-top:2px solid var(--now);z-index:3}
+.nowbar:before{content:"";position:absolute;left:-1px;top:-6px;width:10px;height:10px;border-radius:50%;background:var(--now)}
+.wake{position:absolute;left:8px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.fab{position:absolute;right:20px;bottom:96px;height:52px;padding:0 20px;border-radius:26px;background:var(--ink);color:#fff;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600}
+
+/* routine */
+.sec{margin-top:30px}
+.sec h2{font-size:17px;font-weight:600;margin-bottom:12px;line-height:1.4}
+.panel{background:var(--surface);border-radius:20px;padding:20px}
+.wakerow{display:flex;justify-content:space-between;align-items:center}
+.wakerow .v{font-size:30px;font-weight:600}
+.btn-ghost{border:1px solid var(--line);border-radius:12px;padding:8px 14px;font-size:14px}
+.grid7{display:grid;grid-template-columns:repeat(7,1fr);gap:7px}
+.grid6{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}
+.cell{height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:14px;border:1px solid var(--line);color:var(--muted)}
+.cell.on{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:600}
+.hint{font-size:13px;color:var(--muted);margin-top:12px;line-height:1.65}
+.daystrip{position:relative;height:28px;border-radius:8px;background:#E8ECE9;overflow:hidden;margin-top:14px}
+.daystrip span{position:absolute;top:0;bottom:0}
+.axis{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:6px}
+.row{display:flex;align-items:center;gap:14px;padding:15px 0;border-top:1px solid var(--line)}
+.row:first-child{border-top:none}
+.row .bar{width:4px;align-self:stretch;border-radius:2px}
+.row .time{width:104px;font-size:14px;font-weight:600}
+.row .name{flex:1;font-size:15px}
+.row .dur{font-size:13px;color:var(--muted)}
+.legend{display:flex;gap:18px;font-size:13px;color:var(--muted);margin-top:14px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.addrow{display:flex;gap:8px;margin-top:12px}
+.addrow div{flex:1;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600}
+
+/* batch */
+.topbar{display:flex;align-items:center;gap:14px;padding:6px 0 10px;font-size:18px;font-weight:600}
+.seg{display:flex;background:#E3E8E4;border-radius:14px;padding:4px}
+.seg div{flex:1;text-align:center;padding:9px 0;border-radius:11px;font-size:14px;color:var(--muted)}
+.seg .on{background:var(--surface);color:var(--ink);font-weight:600}
+.dates{display:flex;gap:8px}
+.dates div{flex:1;border:1px solid var(--line);border-radius:12px;padding:8px 12px;background:var(--surface)}
+.dates small{display:block;font-size:12px;color:var(--muted)}
+.dates b{font-size:15px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center;font-size:13px}
+.cal .h{color:var(--muted);font-size:12px;padding-bottom:2px}
+.cal .d{height:32px;display:flex;align-items:center;justify-content:center;border-radius:9px;color:#A7B2AE}
+.cal .d.hit{background:var(--work-bg);color:var(--work);font-weight:600}
+.cal .d.x{visibility:hidden}
+.bottomcta{position:absolute;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);padding:14px 20px 30px}
+.bottomcta p{font-size:14px;color:var(--muted);margin-bottom:10px}
+.bottomcta p b{color:var(--ink)}
+.cta{height:52px;border-radius:16px;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600}
+
+/* stocks */
+.mkt{display:flex;justify-content:space-between;align-items:center;margin-top:16px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--up);margin-right:6px}
+.brief li{list-style:none;padding:13px 0;border-top:1px solid var(--line);font-size:14px;line-height:1.7;display:flex;gap:10px}
+.brief li:first-child{border-top:none;padding-top:0}
+.brief li:before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--ink);margin-top:10px}
+.wl{display:flex;align-items:center;padding:15px 0;border-top:1px solid var(--line)}
+.wl:first-child{border-top:none}
+.wl .sym{width:76px;font-size:16px;font-weight:600}
+.wl .co{flex:1;font-size:13px;color:var(--muted)}
+.wl .px{text-align:right;font-size:15px;font-weight:600}
+.wl .ch{text-align:right;font-size:13px;font-weight:600;margin-top:2px}
+.up{color:var(--up)} .down{color:var(--down)}
+.add{display:flex;justify-content:space-between;align-items:center}
+.add span{font-size:14px;font-weight:600;color:var(--work)}
+
+:root{--study:#9B3E8F;--study-bg:#F5E2F1}
+.blk.cls{background:var(--study-bg);border-left:4px solid var(--study)}
+.card-opt{display:flex;gap:12px;align-items:flex-start}
+.ico{width:24px;height:24px;border-radius:6px;flex:none;margin-top:2px}
+.toggle{width:46px;height:28px;border-radius:14px;background:var(--ink);position:relative;flex:none}
+.toggle:after{content:"";position:absolute;right:3px;top:3px;width:22px;height:22px;border-radius:50%;background:#fff}
+.row .det{font-size:12px;color:var(--muted);line-height:1.5}
+.note{background:var(--task-bg);border-radius:12px;padding:12px 14px;font-size:13px;line-height:1.6;margin-top:14px}
+
+.seg2{display:flex;background:#E3E8E4;border-radius:14px;padding:4px}
+.seg2 div{flex:1;text-align:center;height:44px;line-height:44px;border-radius:11px;font-size:14px;color:var(--muted)}
+.seg2 .on{background:#fff;color:var(--ink);font-weight:600}
+.appbar{display:flex;align-items:center;justify-content:space-between;padding:8px 0 12px}
+.appbar h1{font-size:28px}
+.icons{display:flex;gap:4px}.icons span{width:44px;height:44px;display:flex;align-items:center;justify-content:center}
+.pnav{display:flex;align-items:center;padding:12px 0 8px}
+.pnav .arr{width:48px;height:48px;display:flex;align-items:center;justify-content:center}
+.pnav .mid{flex:1;text-align:center}
+.pnav .t{font-size:17px;font-weight:600;line-height:1.4}
+.pnav .s{font-size:13px;color:var(--study);font-weight:500}
+.mg{display:grid;grid-template-columns:repeat(7,1fr);text-align:center}
+.mg .h{font-size:13px;color:var(--muted);padding-bottom:4px}
+.mc{height:56px;margin:2px;border-radius:12px;display:flex;flex-direction:column;align-items:center;padding-top:6px}
+.mc .n{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px}
+.mc.out .n{color:rgba(90,106,102,.55)}
+.mc.today .n{border:1.5px solid var(--now);font-weight:600}
+.mc.sel{background:var(--ink)} .mc.sel .n{color:#fff;font-weight:600}
+.dots{display:flex;gap:3px;height:6px;margin-top:4px}.dots i{width:6px;height:6px;border-radius:50%}
+.mc.sel .dots i{background:#fff!important}
+.lg{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:10px}.lg i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
+.wd{display:flex;align-items:center;gap:12px;padding:16px 4px 8px}
+.wd .c{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:600}
+.wd .c.sel{background:var(--ink);color:#fff}.wd .c.td{background:#fff}
+.wd .x{flex:1}.wd .x b{font-size:15px;font-weight:600;display:block}.wd .x span{font-size:12px;color:var(--muted)}
+.rowi{display:flex;align-items:center;gap:6px}
+.fab{position:absolute;right:20px;bottom:96px;height:52px;padding:0 20px;border-radius:26px;background:var(--ink);color:#fff;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600}
+</style></head><body><div class="phone" id="cal1"><div class="status"><span>10:40</span><span>●●● 82%</span></div><div class="scroll">
+<div class="appbar"><h1>ปฏิทิน</h1><div class="icons"><span><svg width="22" height="22" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z M14 3v5h5 M12 18v-6 M9 15l3-3 3 3" fill="none" stroke="#18302C" stroke-width="1.8"/></svg></span><span><svg width="22" height="22" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2" fill="none" stroke="#18302C" stroke-width="1.8"/><path d="M8 13h8M13 10l3 3-3 3" fill="none" stroke="#18302C" stroke-width="1.8"/></svg></span></div></div>
+<div class="seg2"><div class="on">เดือน</div><div class="">สัปดาห์</div><div class="">วัน</div></div>
+<div class="pnav"><span class="arr"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#18302C" stroke-width="2.2"/></svg></span><div class="mid"><div class="t">พฤศจิกายน 2569</div><div class="s">สัปดาห์ที่ 4 จาก 17</div></div><span class="arr"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#18302C" stroke-width="2.2"/></svg></span></div>
+<div class="mg"><div class="h">อา</div><div class="h">จ</div><div class="h">อ</div><div class="h">พ</div><div class="h">พฤ</div><div class="h">ศ</div><div class="h">ส</div><div class="mc"><div class="n">1</div><div class="dots"></div></div><div class="mc"><div class="n">2</div><div class="dots"><i style="background:var(--work)"></i><i style="background:var(--break)"></i><i style="background:var(--task)"></i></div></div><div class="mc"><div class="n">3</div><div class="dots"><i style="background:var(--work)"></i><i style="background:var(--break)"></i><i style="background:var(--task)"></i></div></div><div class="mc"><div class="n">4</div><div class="dots"><i style="background:var(--work)"></i><i style="background:var(--break)"></i><i style="background:var(--task)"></i></div></div><div class="mc"><div class="n">5</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc"><div class="n">6</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc"><div class="n">7</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc"><div class="n">8</div><div class="dots"></div></div><div class="mc sel"><div class="n">9</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc"><div class="n">10</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc"><div class="n">11</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc"><div class="n">12</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc"><div class="n">13</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc"><div class="n">14</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc"><div class="n">15</div><div class="dots"></div></div><div class="mc"><div class="n">16</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc"><div class="n">17</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc"><div class="n">18</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc"><div class="n">19</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc"><div class="n">20</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc"><div class="n">21</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc"><div class="n">22</div><div class="dots"></div></div><div class="mc"><div class="n">23</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc"><div class="n">24</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc"><div class="n">25</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc"><div class="n">26</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc"><div class="n">27</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc"><div class="n">28</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc"><div class="n">29</div><div class="dots"></div></div><div class="mc"><div class="n">30</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc out"><div class="n">1</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc out"><div class="n">2</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc out"><div class="n">3</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc out"><div class="n">4</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc out"><div class="n">5</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc out"><div class="n">6</div><div class="dots"></div></div><div class="mc out"><div class="n">7</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc out"><div class="n">8</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc out"><div class="n">9</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc out"><div class="n">10</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc out"><div class="n">11</div><div class="dots"><i style="background:var(--study)"></i></div></div><div class="mc out"><div class="n">12</div><div class="dots"><i style="background:var(--study)"></i></div></div></div><div class="lg"><span><i style="background:var(--study)"></i>เรียน</span><span><i style="background:var(--work)"></i>ทำงาน</span><span><i style="background:var(--break)"></i>พัก</span><span><i style="background:var(--task)"></i>กิจกรรม</span></div>
+<div class="sec" style="margin-top:22px;display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">วันจันทร์ที่ 9 พฤศจิกายน</h2><span style="color:var(--work);font-weight:600;font-size:14px">ดูรายวัน</span></div>
+<div class="panel" style="padding:4px 18px;margin-top:12px"><div class="row"><span class="bar" style="background:var(--study)"></span><span class="time tnum">08:00–08:15</span><div style="flex:1"><div class="name" style="font-size:15px;line-height:1.45">กิจกรรมหน้าเสาธง</div><div class="rowi"><span style="width:12px;height:12px;border-radius:3px;border:2px solid var(--study);display:inline-block"></span><span class="det">15 นาที</span></div></div></div><div class="row"><span class="bar" style="background:var(--study)"></span><span class="time tnum">08:15–09:15</span><div style="flex:1"><div class="name" style="font-size:15px;line-height:1.45">Home Room</div><div class="rowi"><span style="width:12px;height:12px;border-radius:3px;border:2px solid var(--study);display:inline-block"></span><span class="det">ครูณัฐชา</span></div></div></div><div class="row"><span class="bar" style="background:var(--study)"></span><span class="time tnum">09:15–12:15</span><div style="flex:1"><div class="name" style="font-size:15px;line-height:1.45">ระบบเสียง</div><div class="rowi"><span style="width:12px;height:12px;border-radius:3px;border:2px solid var(--study);display:inline-block"></span><span class="det">20105-2012  ห้อง 7102  ครูต่วนมะรูดี</span></div></div></div></div>
+</div><div class="fab">＋ เพิ่มวันนี้</div><div class="nav"><div class="on"><span class="ic"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="3" fill="none" stroke="#fff" stroke-width="2"/><path d="M4 10h16M9 3v4M15 3v4" stroke="#fff" stroke-width="2"/></svg></span>ปฏิทิน</div><div><span class="ic"><svg viewBox="0 0 24 24"><path d="M5 9a7 7 0 0 1 12-3l2-2v6h-6l2-2a5 5 0 0 0-8 1M19 15a7 7 0 0 1-12 3l-2 2v-6h6l-2 2a5 5 0 0 0 8-1" fill="none" stroke="#5A6A66" stroke-width="2"/></svg></span>กิจวัตร</div><div><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 17l5-5 4 4 7-8" fill="none" stroke="#5A6A66" stroke-width="2"/></svg></span>หุ้น</div></div></div><div class="phone" id="cal2"><div class="status"><span>10:40</span><span>●●● 82%</span></div><div class="scroll">
+<div class="appbar"><h1>ปฏิทิน</h1><div class="icons"><span><svg width="22" height="22" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z M14 3v5h5 M12 18v-6 M9 15l3-3 3 3" fill="none" stroke="#18302C" stroke-width="1.8"/></svg></span><span><svg width="22" height="22" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2" fill="none" stroke="#18302C" stroke-width="1.8"/><path d="M8 13h8M13 10l3 3-3 3" fill="none" stroke="#18302C" stroke-width="1.8"/></svg></span></div></div>
+<div class="seg2"><div class="">เดือน</div><div class="on">สัปดาห์</div><div class="">วัน</div></div>
+<div class="pnav"><span class="arr"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#18302C" stroke-width="2.2"/></svg></span><div class="mid"><div class="t">8–14 พ.ย. 2569</div><div class="s">สัปดาห์ที่ 4 จาก 17</div></div><span class="arr"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#18302C" stroke-width="2.2"/></svg></span></div><div class="wd"><div class="c">8</div><div class="x"><b>วันอาทิตย์</b><span>ว่าง</span></div><svg width="22" height="22" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#5A6A66" stroke-width="2.2"/></svg></div><div class="wd"><div class="c sel">9</div><div class="x"><b>วันจันทร์  วันนี้</b><span>4 รายการ  08:00–15:15</span></div><svg width="22" height="22" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#5A6A66" stroke-width="2.2"/></svg></div><div class="panel" style="padding:4px 18px"><div class="row"><span class="bar" style="background:var(--study)"></span><span class="time tnum">08:00–08:15</span><div style="flex:1"><div class="name" style="font-size:15px;line-height:1.45">กิจกรรมหน้าเสาธง</div><div class="rowi"><span style="width:12px;height:12px;border-radius:3px;border:2px solid var(--study);display:inline-block"></span><span class="det">15 นาที</span></div></div></div><div class="row"><span class="bar" style="background:var(--study)"></span><span class="time tnum">08:15–09:15</span><div style="flex:1"><div class="name" style="font-size:15px;line-height:1.45">Home Room</div><div class="rowi"><span style="width:12px;height:12px;border-radius:3px;border:2px solid var(--study);display:inline-block"></span><span class="det">ครูณัฐชา</span></div></div></div><div class="row"><span class="bar" style="background:var(--study)"></span><span class="time tnum">09:15–12:15</span><div style="flex:1"><div class="name" style="font-size:15px;line-height:1.45">ระบบเสียง</div><div class="rowi"><span style="width:12px;height:12px;border-radius:3px;border:2px solid var(--study);display:inline-block"></span><span class="det">20105-2012  ห้อง 7102  ครูต่วนมะรูดี</span></div></div></div><div class="row"><span class="bar" style="background:var(--study)"></span><span class="time tnum">13:15–15:15</span><div style="flex:1"><div class="name" style="font-size:15px;line-height:1.45">ระบบเสียง</div><div class="rowi"><span style="width:12px;height:12px;border-radius:3px;border:2px solid var(--study);display:inline-block"></span><span class="det">20105-2012  ห้อง 7102  ครูต่วนมะรูดี</span></div></div></div></div><div class="wd"><div class="c">10</div><div class="x"><b>วันอังคาร</b><span>3 รายการ  08:00–18:15</span></div><svg width="22" height="22" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#5A6A66" stroke-width="2.2"/></svg></div><div class="panel" style="padding:4px 18px"><div class="row"><span class="bar" style="background:var(--study)"></span><span class="time tnum">08:00–08:15</span><div style="flex:1"><div class="name" style="font-size:15px;line-height:1.45">กิจกรรมหน้าเสาธง</div><div class="rowi"><span style="width:12px;height:12px;border-radius:3px;border:2px solid var(--study);display:inline-block"></span><span class="det">15 นาที</span></div></div></div><div class="row"><span class="bar" style="background:var(--study)"></span><span class="time tnum">08:15–12:15</span><div style="flex:1"><div class="name" style="font-size:15px;line-height:1.45">งานนิวเมติกส์และไฮดรอลิกส์เบื้องต้น</div><div class="rowi"><span style="width:12px;height:12px;border-radius:3px;border:2px solid var(--study);display:inline-block"></span><span class="det">20100-1007  ห้อง 7102  ครูต่วนมะรูดี</span></div></div></div><div class="row"><span class="bar" style="background:var(--study)"></span><span class="time tnum">13:15–18:15</span><div style="flex:1"><div class="name" style="font-size:15px;line-height:1.45">โปรแกรมเมเบิลลอจิกคอนโทรล</div><div class="rowi"><span style="width:12px;height:12px;border-radius:3px;border:2px solid var(--study);display:inline-block"></span><span class="det">20105-2006  ห้อง 7202  ครูสุภาพร</span></div></div></div></div></div><div class="fab">＋ เพิ่มวันนี้</div><div class="nav"><div class="on"><span class="ic"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="3" fill="none" stroke="#fff" stroke-width="2"/><path d="M4 10h16M9 3v4M15 3v4" stroke="#fff" stroke-width="2"/></svg></span>ปฏิทิน</div><div><span class="ic"><svg viewBox="0 0 24 24"><path d="M5 9a7 7 0 0 1 12-3l2-2v6h-6l2-2a5 5 0 0 0-8 1M19 15a7 7 0 0 1-12 3l-2 2v-6h6l-2 2a5 5 0 0 0 8-1" fill="none" stroke="#5A6A66" stroke-width="2"/></svg></span>กิจวัตร</div><div><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 17l5-5 4 4 7-8" fill="none" stroke="#5A6A66" stroke-width="2"/></svg></span>หุ้น</div></div></div><div class="phone" id="cal3"><div class="status"><span>10:40</span><span>●●● 82%</span></div><div class="scroll">
+<div class="appbar"><h1>ปฏิทิน</h1><div class="icons"><span><svg width="22" height="22" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z M14 3v5h5 M12 18v-6 M9 15l3-3 3 3" fill="none" stroke="#18302C" stroke-width="1.8"/></svg></span><span><svg width="22" height="22" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2" fill="none" stroke="#18302C" stroke-width="1.8"/><path d="M8 13h8M13 10l3 3-3 3" fill="none" stroke="#18302C" stroke-width="1.8"/></svg></span></div></div>
+<div class="seg2"><div class="">เดือน</div><div class="">สัปดาห์</div><div class="on">วัน</div></div>
+<div class="pnav"><span class="arr"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#18302C" stroke-width="2.2"/></svg></span><div class="mid"><div class="t">วันจันทร์ที่ 9 พฤศจิกายน</div><div class="s">สัปดาห์ที่ 4 จาก 17</div></div><span class="arr"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#18302C" stroke-width="2.2"/></svg></span></div>
+<div class="week" style="margin-top:0"><div class="off">อา<b>8</b></div><div class="sel">จ<b>9</b></div><div>อ<b>10</b></div><div>พ<b>11</b></div><div>พฤ<b>12</b></div><div>ศ<b>13</b></div><div>ส<b>14</b></div></div>
+<div class="nowline" style="margin-top:4px"><span class="big tnum" style="font-size:34px">1 ชม. 35 นาที</span></div>
+<div class="now-what">ก่อนจบ <b style="color:var(--study)">ระบบเสียง</b> แล้วพักเที่ยง</div>
+<div style="height:18px"></div><div class="ruler" style="height:720px"><div class="hr tnum" style="top:0.0px">08:00</div><div class="tick" style="top:0.0px"></div><div class="hr tnum" style="top:84.0px">09:00</div><div class="tick" style="top:84.0px"></div><div class="hr tnum" style="top:168.0px">10:00</div><div class="tick" style="top:168.0px"></div><div class="hr tnum" style="top:251.99999999999997px">11:00</div><div class="tick" style="top:251.99999999999997px"></div><div class="hr tnum" style="top:336.0px">12:00</div><div class="tick" style="top:336.0px"></div><div class="hr tnum" style="top:420.0px">13:00</div><div class="tick" style="top:420.0px"></div><div class="hr tnum" style="top:503.99999999999994px">14:00</div><div class="tick" style="top:503.99999999999994px"></div><div class="hr tnum" style="top:588.0px">15:00</div><div class="tick" style="top:588.0px"></div><div class="blk cls thin" style="top:1.0px;height:18.0px;padding:0 14px"><div class="t" style="font-size:11px;line-height:1.2">กิจกรรมหน้าเสาธง</div><div style="display:flex;gap:8px;align-items:center"><div class="m tnum" style="margin:0;font-size:11px">08:00–08:15</div><span class="chk" style="width:14px;height:14px;border-width:1.5px"></span></div></div><div class="blk cls" style="top:22.0px;height:81.0px"><div><div class="t">Home Room</div><div class="m tnum">08:15–09:15  ครูณัฐชา</div></div><span class="chk"></span></div><div class="blk cls" style="top:106.0px;height:248.99999999999997px"><div><div class="t">ระบบเสียง</div><div class="m tnum">09:15–12:15  20105-2012  ห้อง 7102  ครูต่วนมะรูดี</div></div><span class="chk"></span></div><div class="blk cls" style="top:442.0px;height:165.0px"><div><div class="t">ระบบเสียง</div><div class="m tnum">13:15–15:15  20105-2012  ห้อง 7102  ครูต่วนมะรูดี</div></div><span class="chk"></span></div><div class="nowbar" style="top:224.0px"></div></div></div><div class="nav"><div class="on"><span class="ic"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="3" fill="none" stroke="#fff" stroke-width="2"/><path d="M4 10h16M9 3v4M15 3v4" stroke="#fff" stroke-width="2"/></svg></span>ปฏิทิน</div><div><span class="ic"><svg viewBox="0 0 24 24"><path d="M5 9a7 7 0 0 1 12-3l2-2v6h-6l2-2a5 5 0 0 0-8 1M19 15a7 7 0 0 1-12 3l-2 2v-6h6l-2 2a5 5 0 0 0 8-1" fill="none" stroke="#5A6A66" stroke-width="2"/></svg></span>กิจวัตร</div><div><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 17l5-5 4 4 7-8" fill="none" stroke="#5A6A66" stroke-width="2"/></svg></span>หุ้น</div></div></div></body></html>

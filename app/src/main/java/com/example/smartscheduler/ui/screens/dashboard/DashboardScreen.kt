@@ -1,6 +1,20 @@
 package com.example.smartscheduler.ui.screens.dashboard
 
+import android.content.Context
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
+import dagger.hilt.android.qualifiers.ApplicationContext
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -59,36 +73,99 @@ import javax.inject.Inject
 // ViewModel
 // ============================================================================
 
+/** มุมมองของหน้าปฏิทิน */
+enum class CalendarMode(val label: String) { MONTH("เดือน"), WEEK("สัปดาห์"), DAY("วัน") }
+
 data class DashboardUiState(
+    val mode: CalendarMode = CalendarMode.MONTH,
     val date: LocalDate = LocalDate.now(),
+    /** ตารางของวันที่เลือก */
     val day: ScheduleDayWithTasks? = null,
+    /** ตารางของทุกวันในช่วงที่แสดง (เดือน/สัปดาห์) */
+    val range: Map<LocalDate, ScheduleDayWithTasks> = emptyMap(),
     val loading: Boolean = true,
     /** เช่น "สัปดาห์ที่ 3 จาก 17" หรือ "สัปดาห์สอบปลายภาค" ถ้าตั้งภาคเรียนไว้ */
     val weekLabel: String? = null
 )
 
+/** ช่วงวันที่ที่มุมมองต้องใช้: เดือน = 6 สัปดาห์เต็มของตาราง, สัปดาห์ = อาทิตย์–เสาร์ */
+fun visibleRange(mode: CalendarMode, date: LocalDate): ClosedRange<LocalDate> = when (mode) {
+    CalendarMode.MONTH -> {
+        val first = Recurrence.weekStart(date.withDayOfMonth(1))
+        first..first.plusDays(41)
+    }
+    CalendarMode.WEEK, CalendarMode.DAY -> Recurrence.weekStart(date).let { it..it.plusDays(6) }
+}
+
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
+    @ApplicationContext context: Context,
     private val repo: ScheduleRepository,
     private val auth: CurrentUser,
     private val semesters: SemesterStore
 ) : ViewModel() {
 
     private val uid get() = auth.uid
+    private val prefs = context.getSharedPreferences("calendar", Context.MODE_PRIVATE)
     private val selected = MutableStateFlow(LocalDate.now())
+    private val mode = MutableStateFlow(
+        runCatching { CalendarMode.valueOf(prefs.getString(KEY_MODE, null) ?: "") }.getOrDefault(CalendarMode.MONTH)
+    )
 
-    val state: StateFlow<DashboardUiState> = selected.flatMapLatest { date ->
-        flow {
-            emit(DashboardUiState(date = date, loading = true))
-            repo.ensureDefaultTemplate(uid)
-            repo.ensureDayGenerated(uid, date)
-            val label = semesters.load()?.label(date)
-            emitAll(repo.observeDay(uid, date).map { DashboardUiState(date, it, false, label) })
-        }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardUiState())
+    /**
+     * ตารางของทุกวันในช่วงที่มองเห็น โหลดใหม่เฉพาะเมื่อ "ช่วง" เปลี่ยน (เลื่อนเดือน/สัปดาห์ หรือสลับมุมมอง)
+     * แตะวันอื่นในช่วงเดิมจึงไม่ล้างข้อมูลแล้วโหลดใหม่ (เดิมทำให้สีกะพริบ)
+     * ระหว่างโหลดช่วงใหม่ยังแสดงข้อมูลเดิมไว้ ไม่ล้างหน้าจอ
+     */
+    private val rangeDays: StateFlow<Map<LocalDate, ScheduleDayWithTasks>?> =
+        combine(mode, selected) { m, d -> visibleRange(m, d).let { it.start to it.endInclusive } }
+            .distinctUntilChanged()
+            .flatMapLatest { (start, end) ->
+                flow {
+                    repo.ensureDefaultTemplate(uid)
+                    var d = start
+                    while (!d.isAfter(end)) { repo.ensureDayGenerated(uid, d); d = d.plusDays(1) }
+                    emitAll(
+                        repo.observeRange(uid, start, end)
+                            .map { days -> days.associateBy { LocalDate.ofEpochDay(it.day.dateEpochDay) } }
+                    )
+                }
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val state: StateFlow<DashboardUiState> = combine(mode, selected, rangeDays) { m, date, days ->
+        DashboardUiState(
+            mode = m,
+            date = date,
+            day = days?.get(date),
+            range = days.orEmpty(),
+            loading = days == null,
+            weekLabel = semesters.load()?.label(date)
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardUiState(mode = mode.value))
 
     fun select(date: LocalDate) { selected.value = date }
+
+    fun setMode(m: CalendarMode) {
+        mode.value = m
+        prefs.edit().putString(KEY_MODE, m.name).apply()
+    }
+
+    /** ‹ › เลื่อนทีละเดือน / สัปดาห์ / วัน ตามมุมมอง */
+    fun step(forward: Boolean) {
+        val n = if (forward) 1L else -1L
+        selected.value = when (mode.value) {
+            CalendarMode.MONTH -> selected.value.plusMonths(n)
+            CalendarMode.WEEK -> selected.value.plusWeeks(n)
+            CalendarMode.DAY -> selected.value.plusDays(n)
+        }
+    }
+
+    /** แตะวันในเดือน/สัปดาห์: ครั้งแรกเลือก ครั้งที่สองเปิดรายวัน */
+    fun openDay(date: LocalDate) {
+        if (selected.value == date) setMode(CalendarMode.DAY) else selected.value = date
+    }
 
     fun toggleDone(task: ScheduleTaskEntity) {
         viewModelScope.launch { repo.markTaskStatus(task.taskId, if (task.status == "DONE") "PENDING" else "DONE") }
@@ -104,17 +181,32 @@ class DashboardViewModel @Inject constructor(
     fun delete(task: ScheduleTaskEntity) { viewModelScope.launch { repo.deleteSingleDayTask(task) } }
 
     fun resetDay(date: LocalDate) { viewModelScope.launch { repo.resetDayToTemplate(uid, date) } }
+
+    private companion object { const val KEY_MODE = "mode" }
 }
 
 // ============================================================================
 // Screen
 // ============================================================================
 
-private data class DashEdit(val task: ScheduleTaskEntity?)
+private data class DashEdit(val task: ScheduleTaskEntity?, val date: LocalDate)
 
 private val thai = Locale("th", "TH")
 private val longDate = DateTimeFormatter.ofPattern("EEEEที่ d MMMM", thai)
-private val monthYear = DateTimeFormatter.ofPattern("MMMM", thai)
+
+private fun monthTitle(d: LocalDate) = "${Recurrence.monthFullTh[d.monthValue - 1]} ${d.year + 543}"
+private fun shortDay(d: LocalDate) = "${d.dayOfMonth} ${Recurrence.monthLabelsTh[d.monthValue - 1]}"
+private fun dayLetter(d: LocalDate) = Recurrence.dayLabelsTh.getValue(Recurrence.dayCode(d.dayOfWeek)).trimEnd('.')
+
+private fun periodTitle(mode: CalendarMode, date: LocalDate): String = when (mode) {
+    CalendarMode.MONTH -> monthTitle(date)
+    CalendarMode.WEEK -> {
+        val s = Recurrence.weekStart(date); val e = s.plusDays(6)
+        if (s.month == e.month) "${s.dayOfMonth}–${e.dayOfMonth} ${Recurrence.monthLabelsTh[e.monthValue - 1]} ${e.year + 543}"
+        else "${shortDay(s)} – ${shortDay(e)} ${e.year + 543}"
+    }
+    CalendarMode.DAY -> date.format(longDate)
+}
 
 /** นาทีปัจจุบัน อัปเดตทุก 30 วินาที เพื่อขยับเส้น "ตอนนี้" และตัวนับถอยหลัง */
 @Composable
@@ -128,6 +220,9 @@ private fun rememberNowMinutes(): Int {
     return now
 }
 
+private fun ScheduleDayWithTasks?.sortedTasks(): List<ScheduleTaskEntity> =
+    this?.tasks.orEmpty().sortedBy { it.startMin }
+
 @Composable
 fun DashboardScreen(
     onOpenBatchAssign: () -> Unit,
@@ -137,10 +232,10 @@ fun DashboardScreen(
     val state by viewModel.state.collectAsState()
     var editing by remember { mutableStateOf<DashEdit?>(null) }
     val nowMin = rememberNowMinutes()
-    val isToday = state.date == LocalDate.now()
-    val tasks = remember(state.day) { state.day?.tasks.orEmpty().sortedBy { it.startMin } }
+    val today = LocalDate.now()
+    val c = AppTheme.colors
 
-    Box(Modifier.fillMaxSize().background(AppTheme.colors.ground)) {
+    Box(Modifier.fillMaxSize().background(c.ground)) {
         Column(
             Modifier
                 .fillMaxSize()
@@ -148,86 +243,94 @@ fun DashboardScreen(
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 96.dp)
         ) {
-            TopRow(state.date, state.weekLabel, onSelect = viewModel::select, onOpenBatchAssign = onOpenBatchAssign, onOpenImport = onOpenImport)
-            StatusHeader(state.date, tasks, isToday, nowMin)
-            Spacer(Modifier.height(22.dp))
-            WeekStrip(state.date, onSelect = viewModel::select)
-            Spacer(Modifier.height(18.dp))
+            AppBarRow(onOpenBatchAssign = onOpenBatchAssign, onOpenImport = onOpenImport)
+            SegmentedToggle(
+                options = CalendarMode.values().map { it.label },
+                selectedIndex = state.mode.ordinal,
+                onSelect = { viewModel.setMode(CalendarMode.values()[it]) }
+            )
+            PeriodNav(
+                title = periodTitle(state.mode, state.date),
+                subtitle = state.weekLabel,
+                showToday = if (state.mode == CalendarMode.DAY) state.date != today else today !in visibleRange(state.mode, state.date),
+                onPrev = { viewModel.step(false) },
+                onNext = { viewModel.step(true) },
+                onToday = { viewModel.select(today) },
+                stepName = when (state.mode) {
+                    CalendarMode.MONTH -> "เดือน"; CalendarMode.WEEK -> "สัปดาห์"; CalendarMode.DAY -> "วัน"
+                }
+            )
 
-            if (state.day?.day?.isCustomized == true) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(AppTheme.colors.taskBg)
-                        .padding(start = 14.dp, end = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "วันนี้ปรับเองแล้ว กิจวัตรมาตรฐานจะไม่มาเปลี่ยนวันนี้",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f)
+            when (state.mode) {
+                CalendarMode.MONTH -> {
+                    MonthGrid(
+                        anchor = state.date,
+                        selected = state.date,
+                        days = state.range,
+                        onTap = viewModel::openDay
                     )
-                    TextButton(onClick = { viewModel.resetDay(state.date) }) { Text("ใช้ตามกิจวัตร") }
+                    Spacer(Modifier.height(20.dp))
+                    DayAgenda(
+                        date = state.date,
+                        tasks = state.day.sortedTasks(),
+                        loading = state.loading,
+                        onOpenDay = { viewModel.setMode(CalendarMode.DAY) },
+                        onOpenTask = { editing = DashEdit(it, state.date) }
+                    )
                 }
-                Spacer(Modifier.height(12.dp))
-            }
-
-            when {
-                state.loading -> Box(Modifier.fillMaxWidth().padding(40.dp), Alignment.Center) {
-                    CircularProgressIndicator(color = AppTheme.colors.ink)
-                }
-                tasks.isEmpty() -> EmptyState(
-                    icon = Icons.Filled.EventAvailable,
-                    title = "วันนี้ว่าง",
-                    subtitle = "วันนี้ไม่อยู่ในวันหรือเดือนที่กิจวัตรมาตรฐานทำซ้ำ เพิ่มกิจกรรมเฉพาะวันนี้ได้",
-                    actionLabel = "เพิ่มกิจกรรม",
-                    onAction = { editing = DashEdit(null) }
+                CalendarMode.WEEK -> WeekAgenda(
+                    start = Recurrence.weekStart(state.date),
+                    selected = state.date,
+                    days = state.range,
+                    loading = state.loading,
+                    onOpenDay = { viewModel.select(it); viewModel.setMode(CalendarMode.DAY) },
+                    onOpenTask = { task, date -> editing = DashEdit(task, date) }
                 )
-                else -> DayTimeline(
-                    tasks = tasks,
-                    wakeMin = state.day?.day?.let { it.wakeUpHour * 60 + it.wakeUpMinute },
-                    nowMin = if (isToday) nowMin else null,
+                CalendarMode.DAY -> DayView(
+                    state = state,
+                    nowMin = nowMin,
+                    onSelect = viewModel::select,
+                    onReset = { viewModel.resetDay(state.date) },
                     onToggle = viewModel::toggleDone,
-                    onOpen = { editing = DashEdit(it) }
+                    onOpenTask = { editing = DashEdit(it, state.date) },
+                    onAdd = { editing = DashEdit(null, state.date) }
                 )
             }
         }
 
         ExtendedFloatingActionButton(
-            onClick = { editing = DashEdit(null) },
-            containerColor = AppTheme.colors.ink,
-            contentColor = AppTheme.colors.ground,
+            onClick = { editing = DashEdit(null, state.date) },
+            containerColor = c.ink,
+            contentColor = c.ground,
             icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-            text = { Text("เพิ่มเฉพาะวันนี้") },
+            text = { Text(if (state.date == today) "เพิ่มวันนี้" else "เพิ่มวันที่ ${shortDay(state.date)}") },
             modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp)
         )
     }
 
     editing?.let { edit ->
+        val live = edit.task?.let { t -> state.range.values.flatMap { it.tasks }.plus(state.day?.tasks.orEmpty()).firstOrNull { it.taskId == t.taskId } } ?: edit.task
         TaskEditorDialog(
-            title = if (edit.task == null) "เพิ่มกิจกรรม" else "แก้ไขกิจกรรม",
+            title = if (edit.task == null) "เพิ่มกิจกรรม ${shortDay(edit.date)}" else "แก้ไขกิจกรรม",
             initial = edit.task?.toDraft() ?: defaultDraft(TaskKind.TASK, start = ((nowMin / 60) + 1) * 60 % (24 * 60)),
-            footnote = "มีผลเฉพาะวันที่เลือก กิจวัตรมาตรฐานไม่เปลี่ยน",
-            onSave = { viewModel.save(state.date, edit.task, it); editing = null },
+            footnote = "มีผลเฉพาะวันที่ ${shortDay(edit.date)} กิจวัตรมาตรฐานไม่เปลี่ยน",
+            onSave = { viewModel.save(edit.date, edit.task, it); editing = null },
             onDelete = edit.task?.let { t -> { viewModel.delete(t); editing = null } },
+            done = live?.let { it.status == "DONE" },
+            onDoneChange = live?.let { t -> { _: Boolean -> viewModel.toggleDone(t) } },
             onDismiss = { editing = null }
         )
     }
 }
 
 // ============================================================================
-// Header pieces
+// Header
 // ============================================================================
 
 @Composable
-private fun TopRow(date: LocalDate, weekLabel: String?, onSelect: (LocalDate) -> Unit, onOpenBatchAssign: () -> Unit, onOpenImport: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(date.format(longDate), style = MaterialTheme.typography.bodyLarge, color = AppTheme.colors.muted)
-            weekLabel?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = AppTheme.colors.study) }
-        }
-        if (date != LocalDate.now()) TextButton(onClick = { onSelect(LocalDate.now()) }) { Text("กลับวันนี้") }
+private fun AppBarRow(onOpenBatchAssign: () -> Unit, onOpenImport: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("ปฏิทิน", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f).semantics { heading() })
         IconButton(onClick = onOpenImport) {
             Icon(Icons.Filled.UploadFile, contentDescription = "นำเข้าตารางจากไฟล์", tint = AppTheme.colors.ink)
         }
@@ -237,7 +340,278 @@ private fun TopRow(date: LocalDate, weekLabel: String?, onSelect: (LocalDate) ->
     }
 }
 
-/** หัวหน้าจอ: บอกว่าเหลือเวลาเท่าไรก่อนจบช่วงปัจจุบัน หรือก่อนเริ่มช่วงถัดไป */
+@Composable
+private fun PeriodNav(
+    title: String,
+    subtitle: String?,
+    showToday: Boolean,
+    stepName: String,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onToday: () -> Unit
+) {
+    val c = AppTheme.colors
+    Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onPrev) { Icon(Icons.Filled.ChevronLeft, contentDescription = "${stepName}ก่อนหน้า", tint = c.ink) }
+        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            when {
+                showToday -> TextButton(onClick = onToday, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("กลับมาวันนี้") }
+                subtitle != null -> Text(subtitle, style = MaterialTheme.typography.labelMedium, color = c.study)
+            }
+        }
+        IconButton(onClick = onNext) { Icon(Icons.Filled.ChevronRight, contentDescription = "${stepName}ถัดไป", tint = c.ink) }
+    }
+}
+
+// ============================================================================
+// Month view
+// ============================================================================
+
+private val kindOrder = listOf(TaskKind.CLASS, TaskKind.WORK, TaskKind.BREAK, TaskKind.TASK)
+
+@Composable
+private fun MonthGrid(
+    anchor: LocalDate,
+    selected: LocalDate,
+    days: Map<LocalDate, ScheduleDayWithTasks>,
+    onTap: (LocalDate) -> Unit
+) {
+    val c = AppTheme.colors
+    val today = LocalDate.now()
+    val first = Recurrence.weekStart(anchor.withDayOfMonth(1))
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+            for (i in 0..6) {
+                Text(
+                    dayLetter(first.plusDays(i.toLong())),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = c.muted,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1f).clearAndSetSemantics { }
+                )
+            }
+        }
+        for (week in 0 until 6) {
+            Row(Modifier.fillMaxWidth()) {
+                for (col in 0..6) {
+                    val d = first.plusDays((week * 7 + col).toLong())
+                    val inMonth = d.month == anchor.month
+                    val tasks = days[d]?.tasks.orEmpty()
+                    val kinds = kindOrder.filter { k -> tasks.any { it.kind == k.code } }
+                    val isSel = d == selected
+                    val cellBg by animateColorAsState(if (isSel) c.ink else Color.Transparent, tween(150), label = "cellBg")
+                    val summary = if (tasks.isEmpty()) "ว่าง"
+                        else "${tasks.size} รายการ " + kinds.joinToString(" ") { it.label }
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .heightIn(min = 56.dp)
+                            .padding(2.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(cellBg)
+                            .selectable(selected = isSel, role = Role.Button, onClick = { onTap(d) })
+                            .semantics { contentDescription = "${d.format(longDate)} $summary" + if (d == today) " วันนี้" else "" }
+                            .padding(vertical = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Box(
+                            Modifier
+                                .size(28.dp)
+                                .then(if (d == today && !isSel) Modifier.border(1.5.dp, c.now, CircleShape) else Modifier),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "${d.dayOfMonth}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = if (isSel || d == today) FontWeight.SemiBold else FontWeight.Normal,
+                                color = when {
+                                    isSel -> c.ground
+                                    !inMonth -> c.muted.copy(alpha = 0.55f)
+                                    else -> c.ink
+                                }
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.height(6.dp)) {
+                            kinds.take(3).forEach { k ->
+                                Box(
+                                    Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isSel) c.ground else k.color())
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            kindOrder.forEach { k ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(8.dp).clip(CircleShape).background(k.color()))
+                    Spacer(Modifier.width(5.dp))
+                    Hint(k.label)
+                }
+            }
+        }
+    }
+}
+
+/** รายการของวันที่เลือก ใต้ตารางเดือน */
+@Composable
+private fun DayAgenda(
+    date: LocalDate,
+    tasks: List<ScheduleTaskEntity>,
+    loading: Boolean,
+    onOpenDay: () -> Unit,
+    onOpenTask: (ScheduleTaskEntity) -> Unit
+) {
+    SectionTitle(date.format(longDate)) {
+        TextButton(onClick = onOpenDay) { Text("ดูรายวัน") }
+    }
+    when {
+        loading -> LoadingRow()
+        tasks.isEmpty() -> Hint("ว่าง แตะ \"เพิ่ม\" เพื่อใส่กิจกรรมของวันนี้")
+        else -> Panel(padding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
+            tasks.forEachIndexed { i, t ->
+                TimeRow(
+                    title = t.title, kind = TaskKind.from(t.kind), startMin = t.startMin, endMin = t.endMin,
+                    reminder = t.reminderEnabled, showDivider = i > 0, subtitle = t.description,
+                    onClick = { onOpenTask(t) }
+                )
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Week view (agenda: one block per day)
+// ============================================================================
+
+@Composable
+private fun WeekAgenda(
+    start: LocalDate,
+    selected: LocalDate,
+    days: Map<LocalDate, ScheduleDayWithTasks>,
+    loading: Boolean,
+    onOpenDay: (LocalDate) -> Unit,
+    onOpenTask: (ScheduleTaskEntity, LocalDate) -> Unit
+) {
+    val c = AppTheme.colors
+    val today = LocalDate.now()
+    if (loading && days.isEmpty()) { LoadingRow(); return }
+    for (i in 0..6) {
+        val d = start.plusDays(i.toLong())
+        val tasks = days[d].sortedTasks()
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = if (i == 0) 4.dp else 16.dp, bottom = 8.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(role = Role.Button, onClickLabel = "ดูรายวัน") { onOpenDay(d) }
+                .heightIn(min = 48.dp)
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(if (d == selected) c.ink else if (d == today) c.surface else Color.Transparent),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "${d.dayOfMonth}",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (d == selected) c.ground else c.ink
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(DayNamesFull[Recurrence.column(d.dayOfWeek)] + if (d == today) "  วันนี้" else "", style = MaterialTheme.typography.titleSmall)
+                Hint(if (tasks.isEmpty()) "ว่าง" else "${tasks.size} รายการ  ${rangeText(tasks.first().startMin, tasks.maxOf { it.endMin })}")
+            }
+            Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = c.muted)
+        }
+        if (tasks.isNotEmpty()) {
+            Panel(padding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
+                tasks.forEachIndexed { j, t ->
+                    TimeRow(
+                        title = t.title, kind = TaskKind.from(t.kind), startMin = t.startMin, endMin = t.endMin,
+                        reminder = t.reminderEnabled, showDivider = j > 0, subtitle = t.description,
+                        onClick = { onOpenTask(t, d) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+private val DayNamesFull = listOf("วันอาทิตย์", "วันจันทร์", "วันอังคาร", "วันพุธ", "วันพฤหัสบดี", "วันศุกร์", "วันเสาร์")
+
+@Composable
+private fun LoadingRow() {
+    Box(Modifier.fillMaxWidth().padding(40.dp), Alignment.Center) { CircularProgressIndicator(color = AppTheme.colors.ink) }
+}
+
+// ============================================================================
+// Day view
+// ============================================================================
+
+@Composable
+private fun DayView(
+    state: DashboardUiState,
+    nowMin: Int,
+    onSelect: (LocalDate) -> Unit,
+    onReset: () -> Unit,
+    onToggle: (ScheduleTaskEntity) -> Unit,
+    onOpenTask: (ScheduleTaskEntity) -> Unit,
+    onAdd: () -> Unit
+) {
+    val isToday = state.date == LocalDate.now()
+    val tasks = state.day.sortedTasks()
+    WeekStrip(state.date, onSelect = onSelect)
+    Spacer(Modifier.height(18.dp))
+    StatusHeader(state.date, tasks, isToday, nowMin)
+    Spacer(Modifier.height(20.dp))
+
+    if (state.day?.day?.isCustomized == true) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(AppTheme.colors.taskBg)
+                .padding(start = 14.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("วันนี้ปรับเองแล้ว กิจวัตรมาตรฐานจะไม่มาเปลี่ยนวันนี้", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+            TextButton(onClick = onReset) { Text("ใช้ตามกิจวัตร") }
+        }
+        Spacer(Modifier.height(12.dp))
+    }
+
+    when {
+        state.loading -> LoadingRow()
+        tasks.isEmpty() -> EmptyState(
+            icon = Icons.Filled.EventAvailable,
+            title = "วันนี้ว่าง",
+            subtitle = "วันนี้ไม่อยู่ในวันหรือเดือนที่กิจวัตรมาตรฐานทำซ้ำ เพิ่มกิจกรรมเฉพาะวันนี้ได้",
+            actionLabel = "เพิ่มกิจกรรม",
+            onAction = onAdd
+        )
+        else -> DayTimeline(
+            tasks = tasks,
+            wakeMin = state.day?.day?.let { it.wakeUpHour * 60 + it.wakeUpMinute },
+            nowMin = if (isToday) nowMin else null,
+            onToggle = onToggle,
+            onOpen = onOpenTask
+        )
+    }
+}
+
+/** หัวรายวัน: บอกว่าเหลือเวลาเท่าไรก่อนจบช่วงปัจจุบัน หรือก่อนเริ่มช่วงถัดไป */
 @Composable
 private fun StatusHeader(date: LocalDate, tasks: List<ScheduleTaskEntity>, isToday: Boolean, nowMin: Int) {
     val c = AppTheme.colors
@@ -247,11 +621,10 @@ private fun StatusHeader(date: LocalDate, tasks: List<ScheduleTaskEntity>, isTod
     val currentColor = current?.let { TaskKind.from(it.kind).color() } ?: c.ink
     val nextColor = next?.let { TaskKind.from(it.kind).color() } ?: c.ink
 
-    val big: String
     val line = buildAnnotatedString {
         when {
-            tasks.isEmpty() -> { append("ยังไม่มีกิจกรรม") }
-            !isToday -> { append("${durationText(tasks.filter { it.kind == TaskKind.WORK.code }.sumOf { it.durationMinutes })} สำหรับทำงาน") }
+            tasks.isEmpty() -> append("ยังไม่มีกิจกรรม")
+            !isToday -> append("${tasks.size} รายการ ตั้งแต่ ${rangeText(tasks.first().startMin, tasks.maxOf { it.endMin })}")
             current != null -> {
                 append("ก่อนจบ ")
                 withStyle(SpanStyle(color = currentColor, fontWeight = FontWeight.SemiBold)) { append(current.title) }
@@ -264,27 +637,26 @@ private fun StatusHeader(date: LocalDate, tasks: List<ScheduleTaskEntity>, isTod
             else -> append("หมดตารางวันนี้แล้ว")
         }
     }
-    big = when {
-        tasks.isEmpty() -> date.format(monthYear)
-        !isToday -> "${tasks.size} รายการ"
+    val big = when {
+        !isToday || tasks.isEmpty() -> null
         current != null -> durationText(current.endMin - nowMin)
         next != null -> "อีก ${durationText(next.startMin - nowMin)}"
         else -> "เสร็จ $done จาก ${tasks.size}"
     }
 
-    Column(Modifier.padding(top = 4.dp)) {
-        Text(big, style = MaterialTheme.typography.displaySmall, color = c.ink)
+    Column {
+        big?.let { Text(it, style = MaterialTheme.typography.displaySmall, color = c.ink) }
         Text(line, style = MaterialTheme.typography.bodyLarge, color = c.ink)
         if (tasks.isNotEmpty()) {
-            Spacer(Modifier.height(18.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.clearAndSetSemantics { }) {
                 tasks.forEach { t ->
                     Box(
                         Modifier
                             .weight(1f)
                             .height(6.dp)
                             .clip(RoundedCornerShape(3.dp))
-                            .background(if (t.status == "DONE") c.ink else c.line)
+                            .background(if (t.status == "DONE") c.ink else c.outline.copy(alpha = 0.45f))
                     )
                 }
             }
@@ -294,37 +666,31 @@ private fun StatusHeader(date: LocalDate, tasks: List<ScheduleTaskEntity>, isTod
     }
 }
 
+/** แถบ 7 วันของสัปดาห์ในมุมมองรายวัน (เลื่อนสัปดาห์ด้วย ‹ › ด้านบน) */
 @Composable
 private fun WeekStrip(selected: LocalDate, onSelect: (LocalDate) -> Unit) {
     val c = AppTheme.colors
     val sunday = Recurrence.weekStart(selected)
     val today = LocalDate.now()
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { onSelect(selected.minusWeeks(1)) }, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.Filled.ChevronLeft, contentDescription = "สัปดาห์ก่อน", tint = c.muted)
-        }
+    Row(Modifier.fillMaxWidth().selectableGroup()) {
         for (i in 0..6) {
             val d = sunday.plusDays(i.toLong())
             val on = d == selected
+            val stripBg by animateColorAsState(if (on) c.ink else Color.Transparent, tween(150), label = "stripBg")
             Column(
                 Modifier
                     .weight(1f)
+                    .padding(horizontal = 2.dp)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(if (on) c.ink else Color.Transparent)
-                    .clickable { onSelect(d) }
+                    .background(stripBg)
+                    .selectable(selected = on, role = Role.Tab, onClick = { onSelect(d) })
+                    .semantics { contentDescription = d.format(longDate) + if (d == today) " วันนี้" else "" }
+                    .heightIn(min = 56.dp)
                     .padding(vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(
-                    Recurrence.dayLabelsTh.getValue(Recurrence.dayCode(d.dayOfWeek)).trimEnd('.'),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (on) c.ground.copy(alpha = 0.75f) else c.muted
-                )
-                Text(
-                    "${d.dayOfMonth}",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (on) c.ground else c.ink
-                )
+                Text(dayLetter(d), style = MaterialTheme.typography.labelSmall, color = if (on) c.ground.copy(alpha = 0.8f) else c.muted)
+                Text("${d.dayOfMonth}", style = MaterialTheme.typography.titleMedium, color = if (on) c.ground else c.ink)
                 Box(
                     Modifier
                         .padding(top = 2.dp)
@@ -333,9 +699,6 @@ private fun WeekStrip(selected: LocalDate, onSelect: (LocalDate) -> Unit) {
                         .background(if (d == today && !on) c.now else Color.Transparent)
                 )
             }
-        }
-        IconButton(onClick = { onSelect(selected.plusWeeks(1)) }, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.Filled.ChevronRight, contentDescription = "สัปดาห์ถัดไป", tint = c.muted)
         }
     }
 }
@@ -466,7 +829,7 @@ private fun TimelineBlock(task: ScheduleTaskEntity, height: Dp, modifier: Modifi
         Row(
             Modifier
                 .weight(1f)
-                .padding(horizontal = 14.dp, vertical = if (thin) 0.dp else 10.dp)
+                .padding(start = 14.dp, end = 2.dp, top = if (thin) 0.dp else 10.dp, bottom = if (thin) 0.dp else 10.dp)
                 .then(if (thin) Modifier.fillMaxHeight() else Modifier),
             verticalAlignment = if (thin) Alignment.CenterVertically else Alignment.Top
         ) {
@@ -481,9 +844,14 @@ private fun TimelineBlock(task: ScheduleTaskEntity, height: Dp, modifier: Modifi
                     fontWeight = FontWeight.SemiBold,
                     textDecoration = if (done) TextDecoration.LineThrough else null,
                     color = if (done) c.muted else c.ink,
-                    maxLines = if (thin) 1 else 2
+                    maxLines = if (thin) 1 else 2,
+                    overflow = TextOverflow.Ellipsis
                 )
-                if (!thin) Hint("${rangeText(task.startMin, task.endMin)}  ${task.description ?: durationText(task.durationMinutes)}")
+                if (!thin) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(kind.icon(), contentDescription = kind.label, tint = accent, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Hint("${rangeText(task.startMin, task.endMin)}  ${task.description ?: durationText(task.durationMinutes)}")
+                }
             }
             if (thin) {
                 Text(
@@ -493,19 +861,26 @@ private fun TimelineBlock(task: ScheduleTaskEntity, height: Dp, modifier: Modifi
                 )
                 Spacer(Modifier.width(8.dp))
             }
-            run {
+            // พื้นที่กดกว้าง 48dp (ช่วงสั้นมากติ๊กได้จากหน้าต่างแก้ไขด้วย)
+            Box(
+                Modifier
+                    .width(48.dp)
+                    .then(if (thin) Modifier.fillMaxHeight() else Modifier.height(48.dp))
+                    .toggleable(value = done, role = Role.Checkbox, onValueChange = { onToggle() })
+                    .semantics { contentDescription = "ทำเสร็จ ${task.title}" },
+                contentAlignment = Alignment.Center
+            ) {
                 Box(
                     Modifier
                         .size(if (tiny) 14.dp else if (thin) 20.dp else 26.dp)
                         .clip(CircleShape)
                         .background(if (done) c.ink else Color.Transparent)
                         .then(if (!done) Modifier.drawBehind {
-                            drawCircle(c.muted, radius = size.minDimension / 2 - 1.dp.toPx(), style = Stroke(2.dp.toPx()))
-                        } else Modifier)
-                        .clickable(onClick = onToggle),
+                            drawCircle(c.outline, radius = size.minDimension / 2 - 1.dp.toPx(), style = Stroke(2.dp.toPx()))
+                        } else Modifier),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (done) Icon(Icons.Filled.Check, contentDescription = "ทำเสร็จแล้ว", tint = c.ground, modifier = Modifier.size(if (tiny) 10.dp else if (thin) 13.dp else 16.dp))
+                    if (done) Icon(Icons.Filled.Check, contentDescription = null, tint = c.ground, modifier = Modifier.size(if (tiny) 10.dp else if (thin) 13.dp else 16.dp))
                 }
             }
         }

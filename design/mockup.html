@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<style>
+@font-face{font-family:"Plex Thai";src:url("f/IBMPlexSansThai-Regular.ttf");font-weight:400}
+@font-face{font-family:"Plex Thai";src:url("f/IBMPlexSansThai-Medium.ttf");font-weight:500}
+@font-face{font-family:"Plex Thai";src:url("f/IBMPlexSansThai-SemiBold.ttf");font-weight:600}
+@font-face{font-family:"Plex Thai";src:url("f/IBMPlexSansThai-Bold.ttf");font-weight:600}
+:root{
+  --ground:#F2F4F0; --surface:#FFFFFF; --ink:#18302C; --muted:#5F6F6B; --line:#D9E0DB;
+  --work:#2B44C4; --work-bg:#E4E8FA; --break:#2F9E62; --break-bg:#DDF1E5;
+  --task:#C9821C; --task-bg:#F8ECD6; --now:#E0473A; --up:#1E8A52; --down:#C8382E;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#C9CFCB;font-family:"Plex Thai",sans-serif;line-height:1.6;letter-spacing:.1px;color:var(--ink);display:flex;gap:40px;padding:40px;flex-wrap:wrap}
+.phone{width:390px;height:844px;background:var(--ground);border-radius:44px;overflow:hidden;position:relative;display:flex;flex-direction:column}
+.status{height:44px;display:flex;justify-content:space-between;align-items:center;padding:0 28px;font-size:14px;font-weight:600}
+.scroll{flex:1;overflow:hidden;padding:0 20px}
+.nav{height:80px;background:var(--surface);border-top:1px solid var(--line);display:flex;justify-content:space-around;align-items:flex-start;padding-top:10px}
+.nav div{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px;color:var(--muted);width:90px}
+.nav .on{color:var(--ink);font-weight:600}
+.nav .ic{width:56px;height:30px;border-radius:15px;display:flex;align-items:center;justify-content:center}
+.nav .on .ic{background:var(--ink);}
+.nav svg{width:20px;height:20px}
+h1{font-size:28px;line-height:1.35;font-weight:600;letter-spacing:-.2px}
+.sub{color:var(--muted);font-size:14px;line-height:1.7}
+.tnum{font-variant-numeric:tabular-nums}
+
+/* today header */
+.today-head{padding:10px 0 20px}
+.today-head .date{font-size:15px;color:var(--muted)}
+.nowline{margin-top:12px;display:flex;align-items:baseline;gap:10px}
+.nowline .big{font-size:38px;font-weight:600;letter-spacing:-.4px;line-height:1.3}
+.nowline .of{font-size:15px;color:var(--muted)}
+.now-what{font-size:16px;margin-top:4px;line-height:1.6}
+.now-what b{color:var(--work)}
+.progress{display:flex;gap:4px;margin-top:18px}
+.progress span{height:6px;border-radius:3px;flex:1;background:var(--line)}
+.progress .d{background:var(--ink)}
+
+/* week strip */
+.week{display:grid;grid-template-columns:repeat(7,1fr);margin:4px -4px 18px;text-align:center}
+.week div{padding:8px 0;border-radius:16px;font-size:12px;color:var(--muted)}
+.week b{display:block;font-size:17px;color:var(--ink);margin-top:2px}
+.week .sel{background:var(--ink);color:#C9D4D0}
+.week .sel b{color:#fff}
+.week .off b{color:#A7B2AE}
+
+/* ruler */
+.ruler{position:relative;margin-left:44px;border-left:1px solid var(--line)}
+.hr{position:absolute;left:-44px;width:36px;text-align:right;font-size:11px;color:var(--muted);transform:translateY(-7px)}
+.tick{position:absolute;left:0;right:0;border-top:1px dashed #E3E8E4}
+.blk{position:absolute;left:10px;right:0;border-radius:12px;padding:10px 14px;overflow:hidden;display:flex;justify-content:space-between;gap:8px}
+.blk .t{font-size:15px;font-weight:600;line-height:1.45}
+.blk .m{font-size:12px;color:var(--muted);margin-top:3px;letter-spacing:.2px}
+.blk.work{background:var(--work-bg);border-left:4px solid var(--work)}
+.blk.break{background:repeating-linear-gradient(135deg,var(--break-bg) 0 6px,#EAF7EF 6px 12px);border-left:4px solid var(--break)}
+.blk.task{background:var(--task-bg);border-left:4px solid var(--task)}
+.blk.done{opacity:.55}
+.blk.done .t{text-decoration:line-through}
+.blk.thin{padding:4px 12px;align-items:center}
+.blk.thin .t{font-size:13px}
+.chk{width:22px;height:22px;border-radius:50%;border:2px solid #9AA8A4;flex:none}
+.chk.y{background:var(--ink);border-color:var(--ink);position:relative}
+.chk.y:after{content:"";position:absolute;left:6px;top:2px;width:5px;height:10px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.nowbar{position:absolute;left:-5px;right:0;border-top:2px solid var(--now);z-index:3}
+.nowbar:before{content:"";position:absolute;left:-1px;top:-6px;width:10px;height:10px;border-radius:50%;background:var(--now)}
+.wake{position:absolute;left:8px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.fab{position:absolute;right:20px;bottom:96px;height:52px;padding:0 20px;border-radius:26px;background:var(--ink);color:#fff;display:flex;align-items:center;gap:8px;font-size:15px;font-weight:600}
+
+/* routine */
+.sec{margin-top:30px}
+.sec h2{font-size:17px;font-weight:600;margin-bottom:12px;line-height:1.4}
+.panel{background:var(--surface);border-radius:20px;padding:20px}
+.wakerow{display:flex;justify-content:space-between;align-items:center}
+.wakerow .v{font-size:30px;font-weight:600}
+.btn-ghost{border:1px solid var(--line);border-radius:12px;padding:8px 14px;font-size:14px}
+.grid7{display:grid;grid-template-columns:repeat(7,1fr);gap:7px}
+.grid6{display:grid;grid-template-columns:repeat(6,1fr);gap:7px}
+.cell{height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:14px;border:1px solid var(--line);color:var(--muted)}
+.cell.on{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:600}
+.hint{font-size:13px;color:var(--muted);margin-top:12px;line-height:1.65}
+.daystrip{position:relative;height:28px;border-radius:8px;background:#E8ECE9;overflow:hidden;margin-top:14px}
+.daystrip span{position:absolute;top:0;bottom:0}
+.axis{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:6px}
+.row{display:flex;align-items:center;gap:14px;padding:15px 0;border-top:1px solid var(--line)}
+.row:first-child{border-top:none}
+.row .bar{width:4px;align-self:stretch;border-radius:2px}
+.row .time{width:104px;font-size:14px;font-weight:600}
+.row .name{flex:1;font-size:15px}
+.row .dur{font-size:13px;color:var(--muted)}
+.legend{display:flex;gap:18px;font-size:13px;color:var(--muted);margin-top:14px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.addrow{display:flex;gap:8px;margin-top:12px}
+.addrow div{flex:1;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600}
+
+/* batch */
+.topbar{display:flex;align-items:center;gap:14px;padding:6px 0 10px;font-size:18px;font-weight:600}
+.seg{display:flex;background:#E3E8E4;border-radius:14px;padding:4px}
+.seg div{flex:1;text-align:center;padding:9px 0;border-radius:11px;font-size:14px;color:var(--muted)}
+.seg .on{background:var(--surface);color:var(--ink);font-weight:600}
+.dates{display:flex;gap:8px}
+.dates div{flex:1;border:1px solid var(--line);border-radius:12px;padding:8px 12px;background:var(--surface)}
+.dates small{display:block;font-size:12px;color:var(--muted)}
+.dates b{font-size:15px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center;font-size:13px}
+.cal .h{color:var(--muted);font-size:12px;padding-bottom:2px}
+.cal .d{height:32px;display:flex;align-items:center;justify-content:center;border-radius:9px;color:#A7B2AE}
+.cal .d.hit{background:var(--work-bg);color:var(--work);font-weight:600}
+.cal .d.x{visibility:hidden}
+.bottomcta{position:absolute;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);padding:14px 20px 30px}
+.bottomcta p{font-size:14px;color:var(--muted);margin-bottom:10px}
+.bottomcta p b{color:var(--ink)}
+.cta{height:52px;border-radius:16px;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600}
+
+/* stocks */
+.mkt{display:flex;justify-content:space-between;align-items:center;margin-top:16px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--up);margin-right:6px}
+.brief li{list-style:none;padding:13px 0;border-top:1px solid var(--line);font-size:14px;line-height:1.7;display:flex;gap:10px}
+.brief li:first-child{border-top:none;padding-top:0}
+.brief li:before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--ink);margin-top:10px}
+.wl{display:flex;align-items:center;padding:15px 0;border-top:1px solid var(--line)}
+.wl:first-child{border-top:none}
+.wl .sym{width:76px;font-size:16px;font-weight:600}
+.wl .co{flex:1;font-size:13px;color:var(--muted)}
+.wl .px{text-align:right;font-size:15px;font-weight:600}
+.wl .ch{text-align:right;font-size:13px;font-weight:600;margin-top:2px}
+.up{color:var(--up)} .down{color:var(--down)}
+.add{display:flex;justify-content:space-between;align-items:center}
+.add span{font-size:14px;font-weight:600;color:var(--work)}
+</style>
+</head>
+<body>
+
+<!-- ====================== TODAY ====================== -->
+<div class="phone" id="today">
+  <div class="status"><span>10:40</span><span>●●● 82%</span></div>
+  <div class="scroll">
+    <div class="today-head">
+      <div class="date">วันจันทร์ที่ 2 พฤศจิกายน</div>
+      <div class="nowline"><span class="big tnum">1 ชม. 20 นาที</span></div>
+      <div class="now-what">ก่อนจบ <b>ช่วงทำงานรอบเช้า</b> แล้วพักเที่ยง</div>
+      <div class="progress"><span class="d"></span><span></span><span></span><span></span><span></span><span></span></div>
+    </div>
+    <div class="week">
+      <div class="off">อา<b>1</b></div><div class="sel">จ<b>2</b></div><div>อ<b>3</b></div><div>พ<b>4</b></div><div>พฤ<b>5</b></div><div>ศ<b>6</b></div><div class="off">ส<b>7</b></div>
+    </div>
+    <div class="ruler" id="ruler" style="height:900px"></div>
+  </div>
+  <div class="fab"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M11 5h2v14h-2zM5 11h14v2H5z" fill="#fff"/></svg>เพิ่มเฉพาะวันนี้</div>
+  <div class="nav">
+    <div class="on"><span class="ic"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="3" fill="none" stroke="#fff" stroke-width="2"/><path d="M4 10h16" stroke="#fff" stroke-width="2"/></svg></span>วันนี้</div>
+    <div><span class="ic"><svg viewBox="0 0 24 24"><path d="M5 9a7 7 0 0 1 12-3l2-2v6h-6l2-2a5 5 0 0 0-8 1M19 15a7 7 0 0 1-12 3l-2 2v-6h6l-2 2a5 5 0 0 0 8-1" fill="none" stroke="#5F6F6B" stroke-width="2"/></svg></span>กิจวัตร</div>
+    <div><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 17l5-5 4 4 7-8" fill="none" stroke="#5F6F6B" stroke-width="2"/></svg></span>หุ้น</div>
+  </div>
+</div>
+
+<!-- ====================== ROUTINE ====================== -->
+<div class="phone" id="routine">
+  <div class="status"><span>10:41</span><span>●●● 82%</span></div>
+  <div class="scroll">
+    <h1 style="margin-top:8px">กิจวัตรมาตรฐาน</h1>
+    <p class="sub" style="margin-top:6px">ใช้กับทุกวันที่เลือกไว้ แก้ที่นี่แล้ววันข้างหน้าที่ยังไม่ได้ปรับเองจะเปลี่ยนตาม</p>
+
+    <div class="sec">
+      <div class="panel">
+        <div class="wakerow"><div><div class="sub">ตื่นนอน</div><div class="v tnum">06:30</div></div><div class="btn-ghost">เปลี่ยนเวลา</div></div>
+        <div class="daystrip" id="strip"></div>
+        <div class="axis tnum"><span>06:00</span><span>12:00</span><span>18:00</span></div>
+        <div class="legend"><span><i style="background:var(--work)"></i>ทำงาน 7 ชม. 15 นาที</span><span><i style="background:var(--break)"></i>พัก 1 ชม. 15 นาที</span></div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>ทำซ้ำวันไหน</h2>
+      <div class="grid7"><div class="cell">อา</div><div class="cell on">จ</div><div class="cell on">อ</div><div class="cell on">พ</div><div class="cell on">พฤ</div><div class="cell on">ศ</div><div class="cell">ส</div></div>
+    </div>
+    <div class="sec">
+      <h2>ทำซ้ำเดือนไหน</h2>
+      <div class="grid6">
+        <div class="cell on">ม.ค.</div><div class="cell on">ก.พ.</div><div class="cell on">มี.ค.</div><div class="cell">เม.ย.</div><div class="cell on">พ.ค.</div><div class="cell on">มิ.ย.</div>
+        <div class="cell on">ก.ค.</div><div class="cell on">ส.ค.</div><div class="cell on">ก.ย.</div><div class="cell on">ต.ค.</div><div class="cell on">พ.ย.</div><div class="cell on">ธ.ค.</div>
+      </div>
+      <p class="hint">ปิดเดือนเมษายนไว้ ช่วงสงกรานต์จะไม่มีตารางให้</p>
+    </div>
+
+    <div class="sec">
+      <h2>ช่วงเวลาในหนึ่งวัน</h2>
+      <div class="panel" style="padding:4px 16px">
+        <div class="row"><span class="bar" style="background:var(--task)"></span><span class="time tnum">07:00–08:30</span><span class="name">เตรียมตัว</span></div>
+        <div class="row"><span class="bar" style="background:var(--work)"></span><span class="time tnum">09:00–12:00</span><span class="name">ทำงานรอบเช้า</span></div>
+        <div class="row"><span class="bar" style="background:var(--break)"></span><span class="time tnum">12:00–13:00</span><span class="name">พักเที่ยง</span></div>
+        <div class="row"><span class="bar" style="background:var(--work)"></span><span class="time tnum">13:00–15:00</span><span class="name">ทำงานรอบบ่าย</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="nav">
+    <div><span class="ic"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="3" fill="none" stroke="#5F6F6B" stroke-width="2"/><path d="M4 10h16" stroke="#5F6F6B" stroke-width="2"/></svg></span>วันนี้</div>
+    <div class="on"><span class="ic"><svg viewBox="0 0 24 24"><path d="M5 9a7 7 0 0 1 12-3l2-2v6h-6l2-2a5 5 0 0 0-8 1M19 15a7 7 0 0 1-12 3l-2 2v-6h6l-2 2a5 5 0 0 0 8-1" fill="none" stroke="#fff" stroke-width="2"/></svg></span>กิจวัตร</div>
+    <div><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 17l5-5 4 4 7-8" fill="none" stroke="#5F6F6B" stroke-width="2"/></svg></span>หุ้น</div>
+  </div>
+</div>
+
+<!-- ====================== BATCH ====================== -->
+<div class="phone" id="batch">
+  <div class="status"><span>10:42</span><span>●●● 82%</span></div>
+  <div class="scroll">
+    <div class="topbar"><svg width="22" height="22" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#18302C" stroke-width="2.2"/></svg>เพิ่มกิจกรรมหลายวัน</div>
+    <div class="seg"><div class="on">ทำซ้ำตามรูปแบบ</div><div>เลือกวันที่เอง</div></div>
+
+    <div class="sec" style="margin-top:16px">
+      <div class="dates"><div><small>ตั้งแต่</small><b>2 พ.ย. 2569</b></div><div><small>ถึง</small><b>30 พ.ย. 2569</b></div></div>
+    </div>
+    <div class="sec" style="margin-top:14px">
+      <div class="grid7"><div class="cell">อา</div><div class="cell on">จ</div><div class="cell">อ</div><div class="cell on">พ</div><div class="cell">พฤ</div><div class="cell on">ศ</div><div class="cell">ส</div></div>
+    </div>
+
+    <div class="sec">
+      <h2>วันที่จะได้รับ</h2>
+      <div class="panel" style="padding:12px">
+        <div class="cal" id="cal"></div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>กิจกรรมที่จะเพิ่ม</h2>
+      <div class="panel" style="padding:4px 16px">
+        <div class="row"><span class="bar" style="background:var(--task)"></span><span class="time tnum">18:00–19:00</span><span class="name">ออกกำลังกาย</span></div>
+        <div class="row"><span class="bar" style="background:var(--break)"></span><span class="time tnum">19:00–19:30</span><span class="name">พักก่อนอ่านหนังสือ</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="bottomcta"><p>จะเพิ่ม <b>2 รายการ</b> ให้ <b>13 วัน</b> ต่อท้ายตารางเดิม</p><div class="cta">เพิ่มให้ 13 วัน</div></div>
+</div>
+
+<!-- ====================== STOCKS ====================== -->
+<div class="phone" id="stocks">
+  <div class="status"><span>10:43</span><span>●●● 82%</span></div>
+  <div class="scroll">
+    <h1 style="margin-top:8px">หุ้น</h1>
+    <div class="seg" style="margin-top:14px"><div class="on">ไทย (SET)</div><div>สหรัฐฯ</div></div>
+    <div class="mkt"><span class="sub"><span class="dot"></span>ตลาดเปิดอยู่ ปิดพักเที่ยง 12:30</span><span class="sub tnum">SET 1,412.36 <span class="up">+0.48%</span></span></div>
+
+    <div class="sec">
+      <h2>สรุปข่าวเช้านี้</h2>
+      <div class="panel">
+        <ul class="brief">
+          <li>กลุ่มพลังงานนำตลาดขึ้น หลังราคาน้ำมันดิบฟื้นตัวช่วงข้ามคืน</li>
+          <li>ธนาคารพาณิชย์ทรงตัว รอผลประชุม กนง. วันพุธ</li>
+          <li>ต่างชาติซื้อสุทธิ 3 วันติดต่อกัน กระจุกตัวในหุ้นใหญ่</li>
+        </ul>
+        <p class="hint" style="margin-top:6px">สรุปโดย AI จากข่าว 18 ชิ้น ไม่ใช่คำแนะนำการลงทุน</p>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="add"><h2 style="margin:0">หุ้นที่ติดตาม</h2><span>+ เพิ่มหุ้น</span></div>
+      <div class="panel" style="padding:4px 16px;margin-top:10px">
+        <div class="wl"><span class="sym">PTT</span><span class="co">ปตท.</span><div><div class="px tnum">34.75 ฿</div><div class="ch up tnum">+1.46%</div></div></div>
+        <div class="wl"><span class="sym">KBANK</span><span class="co">ธนาคารกสิกรไทย</span><div><div class="px tnum">152.50 ฿</div><div class="ch down tnum">−0.33%</div></div></div>
+        <div class="wl"><span class="sym">CPALL</span><span class="co">ซีพี ออลล์</span><div><div class="px tnum">58.25 ฿</div><div class="ch up tnum">+0.87%</div></div></div>
+        <div class="wl"><span class="sym">AOT</span><span class="co">ท่าอากาศยานไทย</span><div><div class="px tnum">61.00 ฿</div><div class="ch down tnum">−1.21%</div></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="nav">
+    <div><span class="ic"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="3" fill="none" stroke="#5F6F6B" stroke-width="2"/><path d="M4 10h16" stroke="#5F6F6B" stroke-width="2"/></svg></span>วันนี้</div>
+    <div><span class="ic"><svg viewBox="0 0 24 24"><path d="M5 9a7 7 0 0 1 12-3l2-2v6h-6l2-2a5 5 0 0 0-8 1M19 15a7 7 0 0 1-12 3l-2 2v-6h6l-2 2a5 5 0 0 0 8-1" fill="none" stroke="#5F6F6B" stroke-width="2"/></svg></span>กิจวัตร</div>
+    <div class="on"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 17l5-5 4 4 7-8" fill="none" stroke="#fff" stroke-width="2"/></svg></span>หุ้น</div>
+  </div>
+</div>
+
+<script>
+const PX = 1.1, START = 6*60;
+const y = m => (m-START)*PX;
+const blocks = [
+  {s:420,e:510,t:"เตรียมตัว / อาหารเช้า",k:"task",done:true},
+  {s:540,e:720,t:"ทำงานรอบเช้า",k:"work"},
+  {s:720,e:780,t:"พักเที่ยง",k:"break"},
+  {s:780,e:900,t:"ทำงานรอบบ่าย",k:"work"},
+  {s:900,e:915,t:"พักสั้น",k:"break"},
+  {s:915,e:1050,t:"ทำงานรอบเย็น",k:"work"},
+];
+const f = m => String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0");
+const dur = m => { const h=Math.floor(m/60), n=m%60; return [h?h+" ชม.":"", n?n+" นาที":""].filter(Boolean).join(" "); };
+const r = document.getElementById("ruler");
+let html = "";
+for (let h=6; h<=18; h++){ html += `<div class="hr tnum" style="top:${y(h*60)}px">${String(h).padStart(2,"0")}:00</div><div class="tick" style="top:${y(h*60)}px"></div>`; }
+html += `<div class="wake" style="top:${y(390)-8}px"><span style="width:8px;height:8px;border-radius:50%;background:var(--ink);margin-left:-13px"></span>ตื่น 06:30</div>`;
+for (const b of blocks){
+  const h = Math.max((b.e-b.s)*PX - 4, 26);
+  const thin = h < 44;
+  html += `<div class="blk ${b.k} ${b.done?'done':''} ${thin?'thin':''}" style="top:${y(b.s)+2}px;height:${h}px">
+    <div><div class="t">${b.t}</div>${thin?'':`<div class="m tnum">${f(b.s)}–${f(b.e)}  ${dur(b.e-b.s)}</div>`}</div>
+    ${thin?`<div class="m tnum" style="margin:0">${f(b.s)}–${f(b.e)}</div>`:`<span class="chk ${b.done?'y':''}"></span>`}
+  </div>`;
+}
+html += `<div class="nowbar" style="top:${y(640)}px"></div>`;
+r.innerHTML = html;
+
+// routine day strip 06:00–18:00
+const s = document.getElementById("strip"); let sh="";
+const col = {work:"var(--work)",break:"var(--break)",task:"var(--task)"};
+for (const b of blocks){ sh += `<span style="left:${(b.s-360)/720*100}%;width:${(b.e-b.s)/720*100}%;background:${col[b.k]};${b.k==='break'?'opacity:.85':''}"></span>`; }
+s.innerHTML = sh;
+
+// Nov 2026 calendar; Nov 1 2026 is Sunday. Mon-first grid.
+const c = document.getElementById("cal"); let ch="";
+["อา","จ","อ","พ","พฤ","ศ","ส"].forEach(d=> ch+=`<div class="h">${d}</div>`);
+// 1 พ.ย. 2569 ตรงกับวันอาทิตย์ จึงไม่มีช่องว่างนำหน้า
+for (let d=1; d<=30; d++){
+  const dow = (d - 1) % 7; // 0=Sun
+  const hit = d>=2 && (dow===1||dow===3||dow===5);
+  ch += `<div class="d ${hit?'hit':''} tnum">${d}</div>`;
+}
+c.innerHTML = ch;
+</script>
+</body>
+</html>

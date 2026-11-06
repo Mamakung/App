@@ -28,6 +28,11 @@ object Recurrence {
         "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."
     )
 
+    val monthFullTh = listOf(
+        "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+        "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
+    )
+
     const val ALL_MONTHS_CSV = "1,2,3,4,5,6,7,8,9,10,11,12"
     const val WEEKDAYS_CSV = "MON,TUE,WED,THU,FRI"
 
@@ -53,6 +58,22 @@ object Recurrence {
     fun daysToCsv(days: Set<String>): String = dayCodes.filter { it in days }.joinToString(",")
 
     fun monthsToCsv(months: Set<Int>): String = months.sorted().joinToString(",")
+
+    /** สรุปกฎเป็นข้อความสั้น เช่น "จ–ศ", "ทุกวัน", "จ พ ศ  ยกเว้น เม.ย." */
+    fun summary(days: Set<String>, months: Set<Int>): String {
+        val d = when (days) {
+            allDays -> "ทุกวัน"
+            weekdays -> "จ–ศ"
+            weekend -> "ส–อา"
+            else -> dayCodes.filter { it in days }.joinToString(" ") { dayLabelsTh.getValue(it).trimEnd('.') }
+        }
+        val m = when {
+            months.size == 12 -> ""
+            months.size >= 9 -> "  ยกเว้น " + (1..12).filter { it !in months }.joinToString(" ") { monthLabelsTh[it - 1] }
+            else -> "  เฉพาะ " + months.sorted().joinToString(" ") { monthLabelsTh[it - 1] }
+        }
+        return d + m
+    }
 
     fun matches(date: LocalDate, daysCsv: String, monthsCsv: String): Boolean =
         dayCode(date.dayOfWeek) in parseDays(daysCsv) && date.monthValue in parseMonths(monthsCsv)

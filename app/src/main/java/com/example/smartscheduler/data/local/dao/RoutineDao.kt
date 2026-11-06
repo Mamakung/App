@@ -48,6 +48,9 @@ interface RoutineDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertTemplateTask(task: RoutineTemplateTaskEntity): Long
 
+    @Query("UPDATE routine_template_tasks SET repeatDays = :days, repeatMonths = :months WHERE templateTaskId IN (:ids)")
+    suspend fun setRepeat(ids: List<Long>, days: String, months: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertTemplateTasks(tasks: List<RoutineTemplateTaskEntity>)
 
