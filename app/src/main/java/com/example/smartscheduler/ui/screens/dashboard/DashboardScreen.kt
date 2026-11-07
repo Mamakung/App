@@ -281,6 +281,7 @@ fun DashboardScreen(
     BackHandler(enabled = state.mode != CalendarMode.MONTH) { viewModel.setMode(CalendarMode.MONTH) }
     var editing by remember { mutableStateOf<DashEdit?>(null) }
     var deleting by remember { mutableStateOf<DashEdit?>(null) }
+    var confirmAll by remember { mutableStateOf<DashEdit?>(null) }
     // ลากเลือกหลายวันในปฏิทินแล้วปล่อย: เพิ่มกิจกรรมเดียวให้ทุกวันในช่วง
     var rangeEdit by remember { mutableStateOf<Pair<LocalDate, LocalDate>?>(null) }
     val context = LocalContext.current
@@ -424,16 +425,35 @@ fun DashboardScreen(
         )
     }
 
+    // ลบรวมวันที่ผ่านมาแล้ว: ถามยืนยันอีกครั้ง
+    confirmAll?.let { d ->
+        d.task?.let { t ->
+            ConfirmDeleteDialog(
+                title = "ลบ \"${t.title}\" ทุกวัน",
+                message = "รวมวันที่ผ่านมาแล้วด้วย ประวัติของรายการนี้จะหายทั้งหมด และย้อนกลับไม่ได้",
+                confirmText = "ลบทั้งหมด",
+                onConfirm = {
+                    viewModel.delete(t, DeleteScope.EVERYTHING)
+                    Toast.makeText(context, "ลบ \"${t.title}\" ทุกวันแล้ว รวมวันที่ผ่านมา", Toast.LENGTH_SHORT).show()
+                    confirmAll = null
+                },
+                onDismiss = { confirmAll = null }
+            )
+        }
+    }
+
     deleting?.let { d ->
         DeleteRepeatingDialog(
             edit = d,
             onConfirm = { scope ->
+                if (scope == DeleteScope.EVERYTHING) { confirmAll = d; deleting = null; return@DeleteRepeatingDialog }
                 d.task?.let { t ->
                     viewModel.delete(t, scope)
                     val what = when (scope) {
                         DeleteScope.THIS -> "เฉพาะวันที่ ${shortDay(d.date)}"
                         DeleteScope.FOLLOWING -> "ตั้งแต่ ${shortDay(d.date)} เป็นต้นไป"
                         DeleteScope.ALL -> "ทุกวันข้างหน้า"
+                        DeleteScope.EVERYTHING -> "ทุกวัน"
                     }
                     Toast.makeText(context, "ลบ \"${t.title}\" $what แล้ว", Toast.LENGTH_SHORT).show()
                 }
@@ -494,21 +514,25 @@ private fun DeleteRepeatingDialog(
     val t = edit.task ?: return
     val day = shortDay(edit.date)
     val weekday = com.example.smartscheduler.importer.DayNames.labelTh(Recurrence.dayCode(edit.date.dayOfWeek))
+    val everything = DeleteOption(DeleteScope.EVERYTHING, "ทุกวัน รวมวันที่ผ่านมาแล้ว", "ลบประวัติด้วย ย้อนกลับไม่ได้ (ถามยืนยันอีกครั้ง)")
     val options = when {
         t.importBatchId != null -> listOf(
             DeleteOption(DeleteScope.THIS, "เฉพาะวันที่ $day", "สัปดาห์อื่นยังมีคาบนี้ตามเดิม"),
             DeleteOption(DeleteScope.FOLLOWING, "ตั้งแต่ $day เป็นต้นไป", "ทุก$weekday ที่เหลือของภาคเรียน"),
-            DeleteOption(DeleteScope.ALL, "ทุกสัปดาห์", "ทุก$weekday ตั้งแต่วันนี้ วันที่ผ่านมาแล้วไม่ลบ")
+            DeleteOption(DeleteScope.ALL, "ทุกสัปดาห์", "ทุก$weekday ตั้งแต่วันนี้ วันที่ผ่านมาแล้วเก็บไว้"),
+            everything
         )
         t.originTemplateTaskId != null -> listOf(
             DeleteOption(DeleteScope.THIS, "เฉพาะวันที่ $day", "กิจวัตรยังอยู่ วันอื่นไม่เปลี่ยน"),
-            DeleteOption(DeleteScope.ALL, "ทุกวัน (เอาออกจากกิจวัตร)", "ลบจากกิจวัตรและทุกวันข้างหน้า วันที่ผ่านมาแล้วไม่ลบ")
+            DeleteOption(DeleteScope.ALL, "ทุกวัน (เอาออกจากกิจวัตร)", "ลบจากกิจวัตรและทุกวันข้างหน้า วันที่ผ่านมาแล้วเก็บไว้"),
+            everything
         )
         // เพิ่มพร้อมกันหลายวัน
         else -> listOf(
             DeleteOption(DeleteScope.THIS, "เฉพาะวันที่ $day", "วันอื่นที่เพิ่มพร้อมกันยังอยู่"),
             DeleteOption(DeleteScope.FOLLOWING, "ตั้งแต่ $day เป็นต้นไป", "รายการนี้ทุกวันหลังจากนั้น"),
-            DeleteOption(DeleteScope.ALL, "ทุกวันที่เพิ่มพร้อมกัน", "ตั้งแต่วันนี้ วันที่ผ่านมาแล้วไม่ลบ")
+            DeleteOption(DeleteScope.ALL, "ทุกวันที่เพิ่มพร้อมกัน", "ตั้งแต่วันนี้ วันที่ผ่านมาแล้วเก็บไว้"),
+            everything
         )
     }
     DeleteScopeDialog(itemTitle = t.title, options = options, onConfirm = onConfirm, onDismiss = onDismiss)

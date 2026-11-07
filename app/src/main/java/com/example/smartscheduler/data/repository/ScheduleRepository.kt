@@ -20,8 +20,15 @@ import javax.inject.Singleton
 
 private const val ALARM_SLOTS = 40
 
-/** ลบรายการที่ซ้ำ: เฉพาะวันนี้ / วันนี้และวันถัดไป / ทุกวัน (วันที่ผ่านมาแล้วไม่แตะเสมอ) */
-enum class DeleteScope { THIS, FOLLOWING, ALL }
+/**
+ * ลบรายการที่ซ้ำ: เฉพาะวันนี้ / วันนี้และวันถัดไป / ทุกวันตั้งแต่วันนี้ (เก็บประวัติ)
+ * / EVERYTHING = ทุกวันรวมวันที่ผ่านมาแล้ว (ต้องถามยืนยันก่อน)
+ * ทุกแบบลบรายการที่กดอยู่ด้วยเสมอ แม้เป็นวันที่ผ่านมาแล้ว
+ */
+enum class DeleteScope { THIS, FOLLOWING, ALL, EVERYTHING }
+
+/** epochDay ที่เก่ากว่าทุกวันในแอป ใช้แทน "รวมวันที่ผ่านมาแล้วทั้งหมด" */
+private const val BEGINNING = -1_000_000L
 
 /** รายการนี้ซ้ำหลายวันหรือไม่ (มาจากกิจวัตรหรือจากตารางที่นำเข้า) */
 val ScheduleTaskEntity.isRepeating: Boolean
@@ -143,10 +150,15 @@ class ScheduleRepository @Inject constructor(
      * ลบหลายรายการออกจากกิจวัตร แล้วเอาออกจากทุกวันข้างหน้าด้วย
      * รวมวันที่เคยปรับเอง (ซึ่งปกติกิจวัตรไม่ไปแก้) เพราะผู้ใช้สั่งลบรายการนี้ทั้งหมด
      */
-    suspend fun deleteTemplateTasks(uid: String, templateId: Long, templateTaskIds: List<Long>) {
+    suspend fun deleteTemplateTasks(
+        uid: String,
+        templateId: Long,
+        templateTaskIds: List<Long>,
+        fromEpochDay: Long = LocalDate.now().toEpochDay()
+    ) {
         if (templateTaskIds.isEmpty()) return
         templateTaskIds.forEach { routineDao.deleteTemplateTaskById(it) }
-        removeTasks(uid, scheduleDao.findTemplateCopies(uid, templateTaskIds, LocalDate.now().toEpochDay()), restoreRoutine = false)
+        removeTasks(uid, scheduleDao.findTemplateCopies(uid, templateTaskIds, fromEpochDay), restoreRoutine = false)
         afterTemplateChange(uid, templateId)
     }
 
@@ -160,7 +172,12 @@ class ScheduleRepository @Inject constructor(
         if (scope == DeleteScope.THIS || !task.isRepeating) return deleteSingleDayTask(task)
         val day = scheduleDao.getDayById(task.dayId) ?: return
         val today = LocalDate.now().toEpochDay()
-        val from = if (scope == DeleteScope.FOLLOWING) maxOf(day.dateEpochDay, today) else today
+        val from = when (scope) {
+            DeleteScope.FOLLOWING -> maxOf(day.dateEpochDay, today)
+            DeleteScope.EVERYTHING -> BEGINNING
+            else -> today
+        }
+        val self = TaskOnDate(task.taskId, task.dayId, day.dateEpochDay)
         val batch = task.importBatchId
         val origin = task.originTemplateTaskId
         val series = task.seriesId
@@ -181,10 +198,12 @@ class ScheduleRepository @Inject constructor(
                 removeTasks(uid, withSelf, restoreRoutine = true)
             }
             origin != null -> {
-                // กิจวัตรลบได้แค่ "วันนี้" หรือ "ทุกวัน" (วันที่ยังไม่สร้างจะได้ไม่กลับมาอีก)
+                // กิจวัตร: เอาออกจากกิจวัตร (วันที่ยังไม่สร้างจะได้ไม่กลับมาอีก) + ลบสำเนาตั้งแต่ [from]
                 val template = routineDao.getActiveTemplate(uid)
-                if (template != null) deleteTemplateTasks(uid, template.templateId, listOf(origin))
+                if (template != null) deleteTemplateTasks(uid, template.templateId, listOf(origin), from)
                 else removeTasks(uid, scheduleDao.findTemplateCopies(uid, listOf(origin), from), restoreRoutine = false)
+                // กดลบจากวันที่ผ่านมาแล้ว: รายการที่กดอยู่ต้องหายด้วย
+                if (day.dateEpochDay < from) removeTasks(uid, listOf(self), restoreRoutine = false)
             }
         }
     }
