@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -84,6 +85,9 @@ fun BoxScope.AddMenuFab(style: FabStyle, actions: List<AddMenuAction>) {
     var hovered by remember { mutableStateOf<Int?>(null) }
     var pressed by remember { mutableStateOf(false) }
     val hold = remember { Animatable(0f) }
+    // ใช้ตัวเลือกล่าสุดเสมอ (เช่น วันที่เลือกเปลี่ยน) ไม่ใช่ค่าตอนเริ่มกด
+    val currentActions by rememberUpdatedState(actions)
+    var overlaySize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
 
     // ความคืบหน้าของแต่ละไอคอน: เปิดแบบเด้ง (ไล่ทีละอัน) ปิดเร็วกว่าเปิด
     val progress = remember(actions.size) { List(actions.size) { Animatable(0f) } }
@@ -119,14 +123,63 @@ fun BoxScope.AddMenuFab(style: FabStyle, actions: List<AddMenuAction>) {
         }
     }
 
-    // ฉากมืด
+    val edgePx = with(density) { Edge.toPx() }
+    val halfFabPx = with(density) { (FabSize / 2).toPx() }
+    val overlayHit = with(density) { 36.dp.toPx() }
+    /** พิกัดในพื้นที่ทั้งจอ (ฉากมืด) */
+    fun itemAtOverlay(pos: Offset): Int? {
+        val fx = overlaySize.width - edgePx - halfFabPx
+        val fy = overlaySize.height - edgePx - halfFabPx
+        targets.forEachIndexed { i, (dx, dy) ->
+            val cx = fx + with(density) { dx.toPx() }
+            val cy = fy + with(density) { dy.toPx() }
+            if (hypot(pos.x - cx, pos.y - cy) < overlayHit) return i
+        }
+        return null
+    }
+
+    // ฉากมืด + รับการแตะทั้งหมดตอนเมนูเปิด
+    //  กดที่ไอคอน = ขึ้นชื่อ (ลากไปไอคอนอื่นได้) ปล่อยบนไอคอน = เข้าเมนูนั้น / แตะที่ว่าง = ปิดเมนู
     if (open > 0f) {
         Box(
             Modifier
                 .matchParentSize()
+                .onSizeChanged { overlaySize = it }
                 .background(c.ground.copy(alpha = 0.72f * open))
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { expanded = false }
-                .semantics { contentDescription = "ปิดเมนู" }
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown()
+                        if (!expanded) return@awaitEachGesture
+                        var last = down.position
+                        var moved = false
+                        itemAtOverlay(last).let { h ->
+                            hovered = h
+                            if (h != null) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
+                        while (true) {
+                            val ev = awaitPointerEvent()
+                            val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!ch.pressed) { last = ch.position; break }
+                            last = ch.position
+                            if ((last - down.position).getDistance() > viewConfiguration.touchSlop) moved = true
+                            val h = itemAtOverlay(last)
+                            if (h != hovered) {
+                                if (h != null) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                hovered = h
+                            }
+                            ch.consume()
+                        }
+                        val pick = itemAtOverlay(last)
+                        hovered = null
+                        if (pick != null) {
+                            expanded = false
+                            currentActions[pick].onClick()
+                        } else if (!moved) {
+                            expanded = false
+                        }
+                    }
+                }
+                .semantics { contentDescription = "ปิดเมนู"; onClick { expanded = false; true } }
         )
     }
 
@@ -152,8 +205,11 @@ fun BoxScope.AddMenuFab(style: FabStyle, actions: List<AddMenuAction>) {
                     .clip(CircleShape)
                     .background(c.surface)
                     .border(if (isHot) 2.dp else 1.5.dp, if (isHot) c.ink else c.line, CircleShape)
-                    .clickable(enabled = expanded) { expanded = false; action.onClick() }
-                    .semantics { contentDescription = action.label; role = Role.Button },
+                    .semantics {
+                        contentDescription = action.label
+                        role = Role.Button
+                        onClick { expanded = false; currentActions[i].onClick(); true }
+                    },
                 contentAlignment = Alignment.Center
             ) { action.icon(tint) }
 
@@ -184,14 +240,17 @@ fun BoxScope.AddMenuFab(style: FabStyle, actions: List<AddMenuAction>) {
     // ปุ่ม +
     val fabCenterPx = with(density) { (FabSize / 2).toPx() }
     val hitRadius = with(density) { 36.dp.toPx() }
-    fun itemAt(pos: Offset): Int? {
+    /** ไอคอนใต้นิ้ว เมื่อรู้ตำแหน่งกึ่งกลางปุ่ม + ([fx], [fy]) ในพิกัดเดียวกับ [pos] */
+    fun itemNear(pos: Offset, fx: Float, fy: Float): Int? {
         targets.forEachIndexed { i, (dx, dy) ->
-            val cx = fabCenterPx + with(density) { dx.toPx() }
-            val cy = fabCenterPx + with(density) { dy.toPx() }
+            val cx = fx + with(density) { dx.toPx() }
+            val cy = fy + with(density) { dy.toPx() }
             if (hypot(pos.x - cx, pos.y - cy) < hitRadius) return i
         }
         return null
     }
+    /** พิกัดในตัวปุ่ม + */
+    fun itemAt(pos: Offset): Int? = itemNear(pos, fabCenterPx, fabCenterPx)
     val corner by animateDpAsState(if (expanded) FabSize / 2 else 18.dp, tween(220), label = "corner")
     Box(
         Modifier
@@ -246,22 +305,23 @@ fun BoxScope.AddMenuFab(style: FabStyle, actions: List<AddMenuAction>) {
                             var last = down.position
                             while (true) {
                                 val ev = awaitPointerEvent()
-                                val ch = ev.changes.firstOrNull() ?: break
+                                val ch = ev.changes.firstOrNull { it.id == down.id } ?: break
                                 last = ch.position
+                                // ปล่อยนิ้ว: เช็กก่อน consume (ถ้า consume ก่อน จะมองไม่เห็นว่าปล่อยแล้ว)
+                                if (!ch.pressed) break
                                 val h = itemAt(last)
                                 if (h != hovered) {
                                     if (h != null) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     hovered = h
                                 }
-                                if (ch.positionChange() != Offset.Zero) ch.consume()
-                                if (ch.changedToUp()) break
+                                ch.consume()
                             }
                             pressed = false
                             val pick = itemAt(last)
                             hovered = null
                             if (pick != null) {
                                 expanded = false
-                                actions[pick].onClick()
+                                currentActions[pick].onClick()
                             }
                         }
                     }
