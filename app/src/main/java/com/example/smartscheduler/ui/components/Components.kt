@@ -439,7 +439,9 @@ fun TimeRow(
     icon: String? = null,
     categoryId: Long? = null,
     /** null = แถวนี้กดเองไม่ได้ (ให้ตัวที่ครอบอยู่จัดการ เช่นโหมดเลือกหลายรายการ) */
-    onClick: (() -> Unit)?
+    onClick: (() -> Unit)?,
+    /** ปุ่มท้ายแถว เช่น ถังขยะ */
+    trailing: (@Composable () -> Unit)? = null
 ) {
     Column {
         if (showDivider) HorizontalDivider(color = AppTheme.colors.line)
@@ -469,6 +471,7 @@ fun TimeRow(
                     modifier = Modifier.size(16.dp), tint = AppTheme.colors.muted
                 )
             }
+            trailing?.invoke()
         }
     }
 }
@@ -791,7 +794,7 @@ fun ColorPicker(kind: TaskKind, selected: String?, categoryId: Long? = null, onS
  * หน้าตาเหมือนแถบสีรุ้ง ตัวเลื่อนแสดงสีที่ได้จริง
  */
 @Composable
-private fun StrengthSlider(base: String?, strength: Int, dark: Boolean, onChange: (Int) -> Unit) {
+internal fun StrengthSlider(base: String?, strength: Int, dark: Boolean, onChange: (Int) -> Unit) {
     val c = AppTheme.colors
     val enabled = base != null
     val word = when {
@@ -881,7 +884,7 @@ private fun StrengthSlider(base: String?, strength: Int, dark: Boolean, onChange
  * สูง 48dp ให้กดง่าย ตัวเลื่อนแสดงสีจริงที่จะใช้ โปรแกรมอ่านหน้าจอปรับค่าได้
  */
 @Composable
-private fun HueBar(hue: Int?, strength: Int, dark: Boolean, onChange: (Int) -> Unit) {
+internal fun HueBar(hue: Int?, strength: Int, dark: Boolean, onChange: (Int) -> Unit) {
     val c = AppTheme.colors
     var widthPx by remember { mutableStateOf(1) }
     val density = LocalDensity.current

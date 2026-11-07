@@ -50,6 +50,8 @@ object Routes {
     fun batchAssignRange(from: java.time.LocalDate, to: java.time.LocalDate) = "batch_assign?from=$from&to=$to"
     const val IMPORT = "import"
     const val SETTINGS = "settings"
+    const val SETTINGS_APPEARANCE = "settings/appearance"
+    const val SETTINGS_CATEGORIES = "settings/categories"
 }
 
 private data class TabItem(val route: String, val label: String, val icon: ImageVector)
@@ -75,8 +77,11 @@ fun AppNavGraph(startDestination: String = Routes.AUTH, openUpdateOnStart: Boole
     val settingsViewModel: com.example.smartscheduler.ui.screens.settings.SettingsViewModel = hiltViewModel()
     val dragColor by settingsViewModel.dragColor.collectAsState()
     val motion by settingsViewModel.motion.collectAsState()
-    val appearance = remember(dragColor, motion) {
-        com.example.smartscheduler.settings.Appearance(androidx.compose.ui.graphics.Color(dragColor.argb), motion)
+    val dark = com.example.smartscheduler.ui.theme.AppTheme.colors.dark
+    val appearance = remember(dragColor, motion, dark) {
+        val color = if (dragColor == com.example.smartscheduler.settings.AppSettings.DRAG_WHITE) androidx.compose.ui.graphics.Color(0xFFE6EEEA)
+        else com.example.smartscheduler.ui.theme.TaskPalette.resolve(dragColor, dark)?.first ?: androidx.compose.ui.graphics.Color(0xFFE6EEEA)
+        com.example.smartscheduler.settings.Appearance(color, motion)
     }
 
     CompositionLocalProvider(
@@ -160,7 +165,18 @@ fun AppNavGraph(startDestination: String = Routes.AUTH, openUpdateOnStart: Boole
             ) {
                 BatchAssignScreen(onBack = { navController.popBackStack() })
             }
-            composable(Routes.SETTINGS) { SettingsScreen() }
+            composable(Routes.SETTINGS) {
+                SettingsScreen(
+                    onOpenAppearance = { navController.navigate(Routes.SETTINGS_APPEARANCE) },
+                    onOpenCategories = { navController.navigate(Routes.SETTINGS_CATEGORIES) }
+                )
+            }
+            composable(Routes.SETTINGS_APPEARANCE) {
+                com.example.smartscheduler.ui.screens.settings.AppearanceScreen(onBack = { navController.popBackStack() })
+            }
+            composable(Routes.SETTINGS_CATEGORIES) {
+                com.example.smartscheduler.ui.screens.settings.CategoriesScreen(onBack = { navController.popBackStack() })
+            }
         }
     }
     }

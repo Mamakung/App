@@ -18,6 +18,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.runtime.key
+import androidx.compose.animation.animateContentSize
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -235,7 +238,7 @@ fun BatchAssignScreen(onBack: () -> Unit, viewModel: BatchAssignViewModel = hilt
     ) { padding ->
         LazyColumn(
             modifier = Modifier.padding(padding).fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp)
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 32.dp)
         ) {
             item {
                 SegmentedToggle(
@@ -329,14 +332,31 @@ fun BatchAssignScreen(onBack: () -> Unit, viewModel: BatchAssignViewModel = hilt
             item {
                 SectionTitle("กิจกรรมที่จะเพิ่ม")
                 if (state.tasks.isNotEmpty()) {
-                    Panel(padding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
+                    Panel(padding = PaddingValues(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)) {
+                      // ลบแถวแล้วกล่องหดลงนุ่มๆ (ปิดได้ในตั้งค่า > การเคลื่อนไหว)
+                      Column(if (com.example.smartscheduler.settings.LocalAppearance.current.animate) Modifier.animateContentSize() else Modifier) {
                         state.tasks.forEachIndexed { i, t ->
-                            TimeRow(
-                                title = t.title, kind = t.kind, startMin = t.startMin, endMin = t.endMin,
-                                reminder = t.reminder, showDivider = i > 0, color = t.color, icon = t.icon, categoryId = t.categoryId,
-                                onClick = { editing = BatchEdit(i, t.kind) }
-                            )
+                            // key = ตัวรายการ: ลบแถวกลางแล้วแถวอื่นไม่สับสน และหดหายนุ่มๆ
+                            key(t) {
+                                TimeRow(
+                                    title = t.title, kind = t.kind, startMin = t.startMin, endMin = t.endMin,
+                                    reminder = t.reminder, showDivider = i > 0, color = t.color, icon = t.icon, categoryId = t.categoryId,
+                                    onClick = { editing = BatchEdit(i, t.kind) },
+                                    trailing = {
+                                        // ถังขยะสีแดง: ลบออกจากรายการทันที (ยังไม่ได้บันทึกลงปฏิทิน จึงไม่ถาม)
+                                        IconButton(
+                                            onClick = { viewModel.removeTask(i) },
+                                            modifier = Modifier.semantics {
+                                                contentDescription = "ลบ ${t.title} ${fmt(t.startMin)}–${fmt(t.endMin)}"
+                                            }
+                                        ) {
+                                            Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                )
+                            }
                         }
+                      }
                     }
                 }
                 // เพิ่มด่วน: แตะ = เพิ่มเลย (ชื่อหมวด + เวลาล่าสุด) / กดค้าง = แก้ก่อนเพิ่ม

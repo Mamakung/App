@@ -1,47 +1,45 @@
 package com.example.smartscheduler.ui.screens.settings
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.semantics.contentDescription
-import com.example.smartscheduler.settings.DragColor
-import com.example.smartscheduler.settings.LocalAppearance
-import com.example.smartscheduler.settings.Motion
-import kotlinx.coroutines.delay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
+import com.example.smartscheduler.data.local.entity.CategoryEntity
+import com.example.smartscheduler.domain.model.TaskKind
 import com.example.smartscheduler.settings.AppSettings
 import com.example.smartscheduler.settings.FabStyle
+import com.example.smartscheduler.settings.LocalAppearance
+import com.example.smartscheduler.settings.Motion
 import com.example.smartscheduler.ui.components.*
 import com.example.smartscheduler.ui.theme.AppTheme
+import com.example.smartscheduler.ui.theme.TaskPalette
 import com.example.smartscheduler.update.AppVersionRow
 import com.example.smartscheduler.update.rememberAppUpdateViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import javax.inject.Inject
 
 @HiltViewModel
@@ -50,16 +48,33 @@ class SettingsViewModel @Inject constructor(private val settings: AppSettings) :
     val dragColor = settings.dragColor
     val motion = settings.motion
     fun setFabStyle(style: FabStyle) = settings.setFabStyle(style)
-    fun setDragColor(color: com.example.smartscheduler.settings.DragColor) = settings.setDragColor(color)
-    fun setMotion(motion: com.example.smartscheduler.settings.Motion) = settings.setMotion(motion)
+    fun setDragColor(key: String) = settings.setDragColor(key)
+    fun setMotion(motion: Motion) = settings.setMotion(motion)
 }
 
+/** ชื่อสีตอนลากสำหรับแสดงสรุป */
+private fun dragColorLabel(key: String): String = when {
+    key == AppSettings.DRAG_WHITE -> "ขาว"
+    TaskPalette.find(key) != null -> TaskPalette.find(key)!!.label
+    else -> "สีจากแถบ"
+}
+
+// ============================================================================
+// หน้าตั้งค่าหลัก: แถวให้แตะเข้าไป + เกี่ยวกับแอป (ตรวจหาอัปเดตกดได้ทันที)
+// ============================================================================
+
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
+fun SettingsScreen(
+    onOpenAppearance: () -> Unit,
+    onOpenCategories: () -> Unit,
+    viewModel: SettingsViewModel = hiltViewModel()
+) {
     val c = AppTheme.colors
     val fabStyle by viewModel.fabStyle.collectAsState()
     val dragColor by viewModel.dragColor.collectAsState()
     val motion by viewModel.motion.collectAsState()
+    val categoryVm: CategoryViewModel = hiltViewModel()
+    val categories by categoryVm.categories.collectAsState()
 
     LazyColumn(
         Modifier.fillMaxSize().background(c.ground),
@@ -72,55 +87,24 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
                 modifier = Modifier.padding(top = 8.dp, bottom = 12.dp).semantics { heading() }
             )
         }
-
-        // ---------- ปรับแต่งหน้าตา ----------
         item {
-            SectionTitle("ปรับแต่งหน้าตา", Modifier.padding(top = 0.dp))
-            AppearancePreview()
-            Spacer(Modifier.height(12.dp))
-            Panel {
-                Text("สีตอนลากเลือกวัน", style = MaterialTheme.typography.titleSmall)
-                Hint("กดค้างที่วันในปฏิทินแล้วลาก")
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 10.dp).selectableGroup(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    DragColor.values().forEach { dc ->
-                        DragSwatch(dc, selected = dc == dragColor, onClick = { viewModel.setDragColor(dc) })
-                    }
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            Panel {
-                Text("การเคลื่อนไหว", style = MaterialTheme.typography.titleSmall)
-                Hint("เด้งตอนเลือกวัน เลือกหมวด และเปลี่ยนเดือน")
-                Spacer(Modifier.height(10.dp))
-                SegmentedToggle(
-                    options = Motion.values().map { it.label },
-                    selectedIndex = Motion.values().indexOf(motion),
-                    onSelect = { viewModel.setMotion(Motion.values()[it]) }
+            Panel(padding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
+                SettingsRow(
+                    icon = Icons.Filled.Palette,
+                    title = "ปรับแต่งหน้าตา",
+                    subtitle = "สีตอนลาก ${dragColorLabel(dragColor)} · เคลื่อนไหว${motion.label} · ${fabStyle.label}",
+                    onClick = onOpenAppearance
+                )
+                HorizontalDivider(color = c.line)
+                SettingsRow(
+                    icon = Icons.Filled.Category,
+                    title = "หมวดหมู่กิจกรรม",
+                    subtitle = if (categories.isEmpty()) "ยังไม่มีหมวดที่สร้างเอง"
+                    else "${categories.size} หมวด · " + categories.take(3).joinToString(" ") { it.name },
+                    onClick = onOpenCategories
                 )
             }
-            Spacer(Modifier.height(12.dp))
-            Text("เมนูปุ่มเพิ่ม (+)", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 8.dp))
-            Row(
-                Modifier.fillMaxWidth().selectableGroup(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                FabStyle.values().forEach { style ->
-                    FabStyleCard(
-                        style = style,
-                        selected = style == fabStyle,
-                        onClick = { viewModel.setFabStyle(style) },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-            Hint("กดปุ่ม + ทีเดียว หรือกดค้างแล้วลากนิ้วไปที่ไอคอน ปล่อยเพื่อเลือก", Modifier.padding(top = 8.dp))
         }
-
-        item { CategoriesSection() }
-
         item {
             SectionTitle("เกี่ยวกับแอป", Modifier.padding(top = 12.dp))
             Panel { AppVersionRow(rememberAppUpdateViewModel()) }
@@ -128,28 +112,118 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     }
 }
 
+/** แถวหน้าตั้งค่า: ไอคอน (สีเดียวกับตัวหนังสือ ไม่มีกล่องสี) + ชื่อ + สรุป + ลูกศร */
 @Composable
-private fun FabStyleCard(style: FabStyle, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun SettingsRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
     val c = AppTheme.colors
-    Column(
-        modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(c.surface)
-            .border(if (selected) 2.dp else 1.dp, if (selected) c.ink else c.line, RoundedCornerShape(16.dp))
-            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
-            .padding(12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 64.dp)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        FabStylePreview(style, accent = if (selected) c.study else c.muted)
-        Spacer(Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (selected) {
-                Icon(Icons.Filled.Check, contentDescription = null, tint = c.ink, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(4.dp))
-            }
-            Text(style.label, style = MaterialTheme.typography.titleSmall)
+        Icon(icon, contentDescription = null, tint = c.ink, modifier = Modifier.size(24.dp))
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Hint(subtitle)
         }
-        Hint(style.detail)
+        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = c.muted)
+    }
+}
+
+/** หัวหน้าย่อย: ปุ่มย้อนกลับ + ชื่อ + ปุ่มด้านขวา (ถ้ามี) */
+@Composable
+private fun SubPageTop(title: String, onBack: () -> Unit, action: (@Composable () -> Unit)? = null) {
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "ย้อนกลับ") }
+        Text(
+            title,
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.weight(1f).padding(start = 4.dp).semantics { heading() }
+        )
+        action?.invoke()
+    }
+}
+
+// ============================================================================
+// ปรับแต่งหน้าตา
+// ============================================================================
+
+@Composable
+fun AppearanceScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
+    val c = AppTheme.colors
+    val fabStyle by viewModel.fabStyle.collectAsState()
+    val dragColor by viewModel.dragColor.collectAsState()
+    val motion by viewModel.motion.collectAsState()
+    val isWhite = dragColor == AppSettings.DRAG_WHITE
+    val strength = if (isWhite) TaskPalette.DEFAULT_STRENGTH else TaskPalette.strengthOf(dragColor)
+    val base = if (isWhite) null else TaskPalette.baseOf(dragColor)
+
+    LazyColumn(
+        Modifier.fillMaxSize().background(c.ground),
+        contentPadding = PaddingValues(start = 12.dp, end = 20.dp, top = 8.dp, bottom = 32.dp)
+    ) {
+        item { SubPageTop("ปรับแต่งหน้าตา", onBack) }
+        item {
+            Column(Modifier.padding(start = 8.dp)) {
+                AppearancePreview(dragColorLabel(dragColor))
+                Spacer(Modifier.height(12.dp))
+                Panel {
+                    Text("สีตอนลากเลือกวัน", style = MaterialTheme.typography.titleSmall)
+                    Hint("กดค้างที่วันในปฏิทินแล้วลาก")
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("สี", style = MaterialTheme.typography.bodyMedium, color = c.muted, modifier = Modifier.weight(1f))
+                        FilterChip(
+                            selected = isWhite,
+                            onClick = { viewModel.setDragColor(AppSettings.DRAG_WHITE) },
+                            label = { Text("ใช้สีขาว") },
+                            leadingIcon = {
+                                Box(Modifier.size(16.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFFE6EEEA)))
+                            },
+                            modifier = Modifier.heightIn(min = 48.dp)
+                        )
+                    }
+                    // แถบสีรุ้ง + ความเข้ม แบบเดียวกับตอนเลือกสีไอคอน
+                    HueBar(
+                        hue = TaskPalette.hueOf(base),
+                        strength = strength,
+                        dark = c.dark,
+                        onChange = { h -> viewModel.setDragColor(TaskPalette.withStrength(TaskPalette.hueKey(h), strength)!!) }
+                    )
+                    StrengthSlider(
+                        base = base,
+                        strength = strength,
+                        dark = c.dark,
+                        onChange = { st -> base?.let { b -> viewModel.setDragColor(TaskPalette.withStrength(b, st)!!) } }
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Panel {
+                    Text("การเคลื่อนไหว", style = MaterialTheme.typography.titleSmall)
+                    Hint("เด้งตอนเลือกวัน เลือกหมวด และเปลี่ยนเดือน")
+                    Spacer(Modifier.height(10.dp))
+                    SegmentedToggle(
+                        options = Motion.values().map { it.label },
+                        selectedIndex = Motion.values().indexOf(motion),
+                        onSelect = { viewModel.setMotion(Motion.values()[it]) }
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Panel {
+                    Text("เมนูปุ่มเพิ่ม (+)", style = MaterialTheme.typography.titleSmall)
+                    Hint("กดปุ่ม + ทีเดียว หรือกดค้างแล้วลากนิ้วไปที่ไอคอน ปล่อยเพื่อเลือก")
+                    Spacer(Modifier.height(10.dp))
+                    SegmentedToggle(
+                        options = FabStyle.values().map { it.label },
+                        selectedIndex = FabStyle.values().indexOf(fabStyle),
+                        onSelect = { viewModel.setFabStyle(FabStyle.values()[it]) }
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -158,13 +232,13 @@ private fun FabStyleCard(style: FabStyle, selected: Boolean, onClick: () -> Unit
  * เปลี่ยนสีหรือระดับการเคลื่อนไหวแล้ว เด้งให้ดูใหม่ทันที (ไล่ทีละวัน)
  */
 @Composable
-private fun AppearancePreview() {
+private fun AppearancePreview(colorLabel: String) {
     val c = AppTheme.colors
     val look = LocalAppearance.current
     Panel {
         Row {
             Hint("ตัวอย่าง", Modifier.weight(1f))
-            Hint("${DragColor.values().firstOrNull { Color(it.argb) == look.dragColor }?.label ?: ""} · เคลื่อนไหว${look.motion.label}")
+            Hint("$colorLabel · เคลื่อนไหว${look.motion.label}")
         }
         Spacer(Modifier.height(8.dp))
         for (week in 0..1) {
@@ -180,10 +254,7 @@ private fun AppearancePreview() {
                             a.animateTo(1f, look.pop())
                         }
                     }
-                    Box(
-                        Modifier.weight(1f).height(40.dp).padding(2.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
+                    Box(Modifier.weight(1f).height(40.dp).padding(2.dp), contentAlignment = Alignment.Center) {
                         if (inRange) {
                             Box(
                                 Modifier
@@ -205,25 +276,74 @@ private fun AppearancePreview() {
     }
 }
 
-/** วงสีตอนลาก: ตัวที่เลือกมีวงรอบนอก + เครื่องหมายถูก */
+// ============================================================================
+// หมวดหมู่กิจกรรม
+// ============================================================================
+
 @Composable
-private fun DragSwatch(dc: DragColor, selected: Boolean, onClick: () -> Unit) {
+fun CategoriesScreen(onBack: () -> Unit) {
     val c = AppTheme.colors
-    val color = Color(dc.argb)
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-            Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .border(2.dp, if (selected) c.ink else Color.Transparent, CircleShape)
-                .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
-                .semantics { contentDescription = "สี${dc.label}" },
-            contentAlignment = Alignment.Center
-        ) {
-            Box(Modifier.size(36.dp).clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
-                if (selected) Icon(Icons.Filled.Check, contentDescription = null, tint = c.ground, modifier = Modifier.size(20.dp))
+    val vm: CategoryViewModel = hiltViewModel()
+    val categories by vm.categories.collectAsState()
+    var editing by remember { mutableStateOf<CategoryEntity?>(null) }
+    var creating by remember { mutableStateOf(false) }
+
+    LazyColumn(
+        Modifier.fillMaxSize().background(c.ground),
+        contentPadding = PaddingValues(start = 12.dp, end = 20.dp, top = 8.dp, bottom = 32.dp)
+    ) {
+        item {
+            SubPageTop("หมวดหมู่กิจกรรม", onBack) {
+                TextButton(onClick = { creating = true }) {
+                    Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("เพิ่มหมวด")
+                }
             }
         }
-        Hint(dc.label)
+        item {
+            Column(Modifier.padding(start = 8.dp)) {
+                if (categories.isEmpty()) {
+                    Hint("สร้างหมวดของตัวเองได้ เช่น อ่านหนังสือ ออกกำลังกาย แต่ละหมวดมีสีและไอคอนของตัวเอง แล้วเลือกได้ตอนเพิ่มกิจกรรม")
+                } else {
+                    Panel(padding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
+                        categories.forEachIndexed { i, cat ->
+                            val k = TaskKind.from(cat.kind)
+                            if (i > 0) HorizontalDivider(color = c.line)
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 60.dp)
+                                    .clickable(role = Role.Button) { editing = cat }
+                                    .padding(vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // เหลือแค่ไอคอนสีของหมวด ไม่มีกล่องสีรอบ
+                                Icon(taskIcon(k, null, cat.categoryId), contentDescription = null, tint = taskAccent(k, null, cat.categoryId), modifier = Modifier.size(24.dp))
+                                Spacer(Modifier.width(16.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(cat.name, style = MaterialTheme.typography.titleMedium)
+                                    Hint("นับเป็น${k.label}")
+                                }
+                                Icon(Icons.Filled.ChevronRight, contentDescription = "แก้หมวด ${cat.name}", tint = c.muted)
+                            }
+                        }
+                    }
+                    Hint("แตะหมวดเพื่อแก้ชื่อ สี ไอคอน หรือลบ", Modifier.padding(top = 10.dp))
+                }
+            }
+        }
+    }
+
+    if (creating) {
+        CategoryDialog(initial = null, onSave = { vm.save(it); creating = false }, onDismiss = { creating = false })
+    }
+    editing?.let { cat ->
+        CategoryDialog(
+            initial = cat,
+            onSave = { vm.save(it); editing = null },
+            onDelete = { vm.delete(cat.categoryId); editing = null },
+            onDismiss = { editing = null }
+        )
     }
 }

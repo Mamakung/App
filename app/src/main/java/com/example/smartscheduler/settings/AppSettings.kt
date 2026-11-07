@@ -14,15 +14,6 @@ enum class FabStyle(val label: String, val detail: String) {
     VERTICAL("แนวตั้ง", "ไอคอนเรียงขึ้นไปเหนือปุ่ม")
 }
 
-/** สีไฮไลต์ตอนกดค้างแล้วลากเลือกวันในปฏิทิน (ARGB) */
-enum class DragColor(val label: String, val argb: Long) {
-    WHITE("ขาว", 0xFFE6EEEA),
-    PINK("ชมพู", 0xFFE59BD9),
-    BLUE("ฟ้า", 0xFF7CC4F5),
-    GREEN("เขียว", 0xFF63D094),
-    YELLOW("เหลือง", 0xFFF2C94C)
-}
-
 /** ระดับการเคลื่อนไหว (เด้งตอนเลือก เปลี่ยนเดือน ฯลฯ) */
 enum class Motion(val label: String) {
     FULL("เต็มที่"),
@@ -45,14 +36,25 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
         _fabStyle.value = style
     }
 
+    /**
+     * สีตอนลากเลือกวัน: "white" หรือรูปแบบเดียวกับสีกิจกรรม ("h200", "h200~70", "teal")
+     * ค่าเก่าจากรุ่นที่เป็นวงสี 5 สี แปลงให้เอง
+     */
     private val _dragColor = MutableStateFlow(
-        runCatching { DragColor.valueOf(prefs.getString(KEY_DRAG, null) ?: "") }.getOrDefault(DragColor.WHITE)
+        when (val v = prefs.getString(KEY_DRAG, null)) {
+            null, "WHITE" -> DRAG_WHITE
+            "PINK" -> "pink"
+            "BLUE" -> "sky"
+            "GREEN" -> "green"
+            "YELLOW" -> "amber"
+            else -> v
+        }
     )
-    val dragColor: StateFlow<DragColor> = _dragColor.asStateFlow()
+    val dragColor: StateFlow<String> = _dragColor.asStateFlow()
 
-    fun setDragColor(color: DragColor) {
-        prefs.edit().putString(KEY_DRAG, color.name).apply()
-        _dragColor.value = color
+    fun setDragColor(key: String) {
+        prefs.edit().putString(KEY_DRAG, key).apply()
+        _dragColor.value = key
     }
 
     private val _motion = MutableStateFlow(
@@ -65,9 +67,10 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
         _motion.value = motion
     }
 
-    private companion object {
-        const val KEY_FAB = "fab_style"
-        const val KEY_DRAG = "drag_color"
-        const val KEY_MOTION = "motion"
+    companion object {
+        const val DRAG_WHITE = "white"
+        private const val KEY_FAB = "fab_style"
+        private const val KEY_DRAG = "drag_color"
+        private const val KEY_MOTION = "motion"
     }
 }

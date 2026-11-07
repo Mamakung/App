@@ -10,7 +10,7 @@ import androidx.compose.ui.graphics.Color
 
 /** หน้าตาที่ผู้ใช้ปรับเอง (ตั้งที่ AppNavGraph จาก AppSettings) */
 data class Appearance(
-    val dragColor: Color = Color(DragColor.WHITE.argb),
+    val dragColor: Color = Color(0xFFE6EEEA),
     val motion: Motion = Motion.FULL
 ) {
     /** เด้งเข้า: เต็มที่ = สปริงเกินนิดแล้วเข้าที่ / น้อย = เลื่อนเร็วๆ / ปิด = ทันที */
