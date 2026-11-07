@@ -1,5 +1,15 @@
 package com.example.smartscheduler.ui.screens.settings
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.contentDescription
+import com.example.smartscheduler.settings.DragColor
+import com.example.smartscheduler.settings.LocalAppearance
+import com.example.smartscheduler.settings.Motion
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -37,13 +47,19 @@ import javax.inject.Inject
 @HiltViewModel
 class SettingsViewModel @Inject constructor(private val settings: AppSettings) : ViewModel() {
     val fabStyle = settings.fabStyle
+    val dragColor = settings.dragColor
+    val motion = settings.motion
     fun setFabStyle(style: FabStyle) = settings.setFabStyle(style)
+    fun setDragColor(color: com.example.smartscheduler.settings.DragColor) = settings.setDragColor(color)
+    fun setMotion(motion: com.example.smartscheduler.settings.Motion) = settings.setMotion(motion)
 }
 
 @Composable
 fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
     val c = AppTheme.colors
     val fabStyle by viewModel.fabStyle.collectAsState()
+    val dragColor by viewModel.dragColor.collectAsState()
+    val motion by viewModel.motion.collectAsState()
 
     LazyColumn(
         Modifier.fillMaxSize().background(c.ground),
@@ -57,8 +73,36 @@ fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
             )
         }
 
+        // ---------- ปรับแต่งหน้าตา ----------
         item {
-            SectionTitle("เมนูปุ่มเพิ่ม (+)", Modifier.padding(top = 0.dp))
+            SectionTitle("ปรับแต่งหน้าตา", Modifier.padding(top = 0.dp))
+            AppearancePreview()
+            Spacer(Modifier.height(12.dp))
+            Panel {
+                Text("สีตอนลากเลือกวัน", style = MaterialTheme.typography.titleSmall)
+                Hint("กดค้างที่วันในปฏิทินแล้วลาก")
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 10.dp).selectableGroup(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    DragColor.values().forEach { dc ->
+                        DragSwatch(dc, selected = dc == dragColor, onClick = { viewModel.setDragColor(dc) })
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Panel {
+                Text("การเคลื่อนไหว", style = MaterialTheme.typography.titleSmall)
+                Hint("เด้งตอนเลือกวัน เลือกหมวด และเปลี่ยนเดือน")
+                Spacer(Modifier.height(10.dp))
+                SegmentedToggle(
+                    options = Motion.values().map { it.label },
+                    selectedIndex = Motion.values().indexOf(motion),
+                    onSelect = { viewModel.setMotion(Motion.values()[it]) }
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Text("เมนูปุ่มเพิ่ม (+)", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 8.dp))
             Row(
                 Modifier.fillMaxWidth().selectableGroup(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -106,5 +150,80 @@ private fun FabStyleCard(style: FabStyle, selected: Boolean, onClick: () -> Unit
             Text(style.label, style = MaterialTheme.typography.titleSmall)
         }
         Hint(style.detail)
+    }
+}
+
+/**
+ * ตัวอย่างสด: ปฏิทินย่อ 2 แถว วันที่ 3–11 ถูกเลือกด้วยสีตอนลาก
+ * เปลี่ยนสีหรือระดับการเคลื่อนไหวแล้ว เด้งให้ดูใหม่ทันที (ไล่ทีละวัน)
+ */
+@Composable
+private fun AppearancePreview() {
+    val c = AppTheme.colors
+    val look = LocalAppearance.current
+    Panel {
+        Row {
+            Hint("ตัวอย่าง", Modifier.weight(1f))
+            Hint("${DragColor.values().firstOrNull { Color(it.argb) == look.dragColor }?.label ?: ""} · เคลื่อนไหว${look.motion.label}")
+        }
+        Spacer(Modifier.height(8.dp))
+        for (week in 0..1) {
+            Row(Modifier.fillMaxWidth()) {
+                for (col in 0..6) {
+                    val day = week * 7 + col + 1
+                    val inRange = day in 3..11
+                    val a = remember { Animatable(0f) }
+                    LaunchedEffect(look) {
+                        a.snapTo(0f)
+                        if (inRange) {
+                            if (look.animate) delay((day - 3) * 45L)
+                            a.animateTo(1f, look.pop())
+                        }
+                    }
+                    Box(
+                        Modifier.weight(1f).height(40.dp).padding(2.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (inRange) {
+                            Box(
+                                Modifier
+                                    .matchParentSize()
+                                    .graphicsLayer {
+                                        val sc = 0.82f + 0.18f * a.value
+                                        scaleX = sc; scaleY = sc; alpha = a.value.coerceIn(0f, 1f)
+                                    }
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(look.dragColor.copy(alpha = 0.14f))
+                                    .border(1.5.dp, look.dragColor.copy(alpha = 0.85f), RoundedCornerShape(10.dp))
+                            )
+                        }
+                        Text("$day", style = MaterialTheme.typography.bodyMedium, color = c.ink)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** วงสีตอนลาก: ตัวที่เลือกมีวงรอบนอก + เครื่องหมายถูก */
+@Composable
+private fun DragSwatch(dc: DragColor, selected: Boolean, onClick: () -> Unit) {
+    val c = AppTheme.colors
+    val color = Color(dc.argb)
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .border(2.dp, if (selected) c.ink else Color.Transparent, CircleShape)
+                .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+                .semantics { contentDescription = "สี${dc.label}" },
+            contentAlignment = Alignment.Center
+        ) {
+            Box(Modifier.size(36.dp).clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
+                if (selected) Icon(Icons.Filled.Check, contentDescription = null, tint = c.ground, modifier = Modifier.size(20.dp))
+            }
+        }
+        Hint(dc.label)
     }
 }

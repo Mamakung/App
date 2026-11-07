@@ -157,7 +157,30 @@ class BatchAssignViewModel @Inject constructor(
     }
 }
 
-private data class BatchEdit(val index: Int?, val kind: TaskKind)
+/** ร่างกิจกรรมจากหมวด: ชื่อหมวด + เวลาที่ใช้ล่าสุด (ถ้าไม่เคยใช้ ต่อจากรายการสุดท้าย 1 ชม.) */
+@Composable
+private fun quickDraft(kind: TaskKind, category: com.example.smartscheduler.data.local.entity.CategoryEntity?, lastEnd: Int?): TaskDraft {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    return quickDraftOf(com.example.smartscheduler.settings.QuickStore(context), kind, category, lastEnd)
+}
+
+private fun quickDraftOf(
+    quick: com.example.smartscheduler.settings.QuickStore,
+    kind: TaskKind,
+    category: com.example.smartscheduler.data.local.entity.CategoryEntity?,
+    lastEnd: Int?
+): TaskDraft {
+    val base = defaultDraft(kind, start = minOf(lastEnd ?: 9 * 60, 23 * 60))
+    val times = quick.lastTimes(com.example.smartscheduler.settings.QuickStore.keyFor(kind.code, category?.categoryId))
+    return base.copy(
+        title = category?.name ?: base.title.ifBlank { kind.label },
+        categoryId = category?.categoryId,
+        startMin = times?.first ?: base.startMin,
+        endMin = times?.second ?: base.endMin
+    )
+}
+
+private data class BatchEdit(val index: Int?, val kind: TaskKind, val category: com.example.smartscheduler.data.local.entity.CategoryEntity? = null)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -166,6 +189,8 @@ fun BatchAssignScreen(onBack: () -> Unit, viewModel: BatchAssignViewModel = hilt
     val snackbar = remember { SnackbarHostState() }
     var editing by remember { mutableStateOf<BatchEdit?>(null) }
     var showAddDate by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val quick = remember { com.example.smartscheduler.settings.QuickStore(context) }
     val dates = remember(state) { state.resolvedDates() }
     val c = AppTheme.colors
 
@@ -314,7 +339,18 @@ fun BatchAssignScreen(onBack: () -> Unit, viewModel: BatchAssignViewModel = hilt
                         }
                     }
                 }
-                AddKindButtons { kind -> editing = BatchEdit(null, kind) }
+                // เพิ่มด่วน: แตะ = เพิ่มเลย (ชื่อหมวด + เวลาล่าสุด) / กดค้าง = แก้ก่อนเพิ่ม
+                Hint("แตะ = เพิ่มเลย · กดค้าง = แก้ก่อนเพิ่ม", Modifier.padding(bottom = 8.dp))
+                QuickAddGrid(
+                    onAdd = { k, cat ->
+                        val d = quickDraftOf(quick, k, cat, lastEnd = state.tasks.maxOfOrNull { it.endMin })
+                        viewModel.saveTask(null, d)
+                        quick.record(com.example.smartscheduler.settings.QuickStore.keyFor(k.code, cat?.categoryId), d.startMin, d.endMin)
+                        android.widget.Toast.makeText(context, "เพิ่ม \"${d.title}\" ${fmt(d.startMin)}–${fmt(d.endMin)} แล้ว", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    onEdit = { k, cat -> editing = BatchEdit(null, k, cat) },
+                    onCustom = { editing = BatchEdit(null, TaskKind.TASK) }
+                )
                 Spacer(Modifier.height(12.dp))
                 Hint("เพิ่มต่อท้ายตารางของแต่ละวัน รายการเดิมยังอยู่ วันเหล่านี้จะนับเป็นวันที่ปรับเอง")
                 Spacer(Modifier.height(24.dp))
@@ -334,7 +370,9 @@ fun BatchAssignScreen(onBack: () -> Unit, viewModel: BatchAssignViewModel = hilt
         val lastEnd = state.tasks.maxOfOrNull { it.endMin } ?: (18 * 60)
         TaskEditorDialog(
             title = if (edit.index == null) "เพิ่มรายการ" else "แก้ไขรายการ",
-            initial = edit.index?.let { state.tasks[it] } ?: defaultDraft(edit.kind, start = minOf(lastEnd, 23 * 60)),
+            initial = edit.index?.let { state.tasks[it] }
+                ?: if (edit.category != null) quickDraft(edit.kind, edit.category, state.tasks.maxOfOrNull { it.endMin })
+                else defaultDraft(edit.kind, start = minOf(lastEnd, 23 * 60)),
             onSave = { viewModel.saveTask(edit.index, it); editing = null },
             onDelete = edit.index?.let { i -> { viewModel.removeTask(i); editing = null } },
             onDismiss = { editing = null }

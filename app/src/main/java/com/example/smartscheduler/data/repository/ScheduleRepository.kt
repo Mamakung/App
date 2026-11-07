@@ -463,6 +463,13 @@ class ScheduleRepository @Inject constructor(
      * วันที่ยังไม่มีตารางจะถูกสร้างจากกิจวัตรมาตรฐานก่อน (ถ้าตรงกฎวัน/เดือน)
      * เวลาตื่นที่ระบุใช้เฉพาะวันที่ไม่มีกิจวัตรมาตรฐานรองรับ
      */
+    /** เพิ่มกิจกรรมเดียวให้ทุกวันตั้งแต่ [from] ถึง [to] (เป็นชุดเดียวกัน ลบ/แก้สีทั้งชุดได้) */
+    suspend fun addTaskToRange(uid: String, from: LocalDate, to: LocalDate, task: ScheduleTaskEntity): String {
+        val dates = generateSequence(minOf(from, to)) { it.plusDays(1) }.takeWhile { !it.isAfter(maxOf(from, to)) }.take(400).toList()
+        val wake = routineDao.getActiveTemplate(uid)?.let { it.wakeUpHour * 60 + it.wakeUpMinute } ?: (7 * 60)
+        return batchAssign(uid, dates, wake, listOf(task))
+    }
+
     suspend fun batchAssign(
         uid: String,
         dates: List<LocalDate>,

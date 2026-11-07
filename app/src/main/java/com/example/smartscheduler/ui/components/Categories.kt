@@ -1,6 +1,8 @@
 package com.example.smartscheduler.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -16,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.graphics.PathFillType
@@ -188,21 +191,29 @@ fun CategoryChips(kind: TaskKind, categoryId: Long?, onPick: (TaskKind, Long?) -
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("หมวด", style = MaterialTheme.typography.titleSmall)
+        // เรียงหมวดที่ใช้บ่อยขึ้นก่อน (นับจากการบันทึก) ที่ใช้เท่ากันคงลำดับเดิม
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val quick = remember { com.example.smartscheduler.settings.QuickStore(context) }
+        val options = remember(categories) {
+            val base = TaskKind.values().map { k -> Triple(k, null as CategoryEntity?, quick.count(com.example.smartscheduler.settings.QuickStore.keyFor(k.code, null))) }
+            val custom = categories.map { c -> Triple(TaskKind.from(c.kind), c, quick.count(com.example.smartscheduler.settings.QuickStore.keyFor(c.kind, c.categoryId))) }
+            (base + custom).withIndex().sortedWith(compareByDescending<IndexedValue<Triple<TaskKind, CategoryEntity?, Int>>> { it.value.third }.thenBy { it.index }).map { it.value }
+        }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
-            TaskKind.values().forEach { k ->
-                CategoryChip(
-                    label = k.label, icon = k.icon(), accent = k.color(),
-                    selected = categoryId == null && kind == k,
-                    onClick = { onPick(k, null) }
-                )
-            }
-            categories.forEach { cat ->
-                val k = TaskKind.from(cat.kind)
-                CategoryChip(
-                    label = cat.name, icon = taskIcon(k, null, cat.categoryId), accent = taskAccent(k, null, cat.categoryId),
-                    selected = categoryId == cat.categoryId,
-                    onClick = { onPick(k, cat.categoryId) }
-                )
+            options.forEach { (k, cat, _) ->
+                if (cat == null) {
+                    CategoryChip(
+                        label = k.label, icon = k.icon(), accent = k.color(),
+                        selected = categoryId == null && kind == k,
+                        onClick = { onPick(k, null) }
+                    )
+                } else {
+                    CategoryChip(
+                        label = cat.name, icon = taskIcon(k, null, cat.categoryId), accent = taskAccent(k, null, cat.categoryId),
+                        selected = categoryId == cat.categoryId,
+                        onClick = { onPick(k, cat.categoryId) }
+                    )
+                }
             }
             AssistChip(
                 onClick = { creating = true },
@@ -236,19 +247,37 @@ fun CategoryChips(kind: TaskKind, categoryId: Long?, onPick: (TaskKind, Long?) -
     }
 }
 
+/** ชิปหมวด: ตอนถูกเลือก ชิปเด้งนิดหนึ่งและไอคอนส่าย (ตามระดับการเคลื่อนไหวในตั้งค่า) */
 @Composable
 private fun CategoryChip(label: String, icon: ImageVector, accent: Color, selected: Boolean, onClick: () -> Unit) {
+    val look = com.example.smartscheduler.settings.LocalAppearance.current
+    val scale = remember { androidx.compose.animation.core.Animatable(1f) }
+    val tilt = remember { androidx.compose.animation.core.Animatable(0f) }
+    var firstRun by remember { mutableStateOf(true) }
+    LaunchedEffect(selected) {
+        if (firstRun) { firstRun = false; return@LaunchedEffect }
+        if (!selected || !look.animate) return@LaunchedEffect
+        launch {
+            scale.animateTo(0.9f, androidx.compose.animation.core.tween(90))
+            scale.animateTo(1f, look.pop())
+        }
+        if (look.motion == com.example.smartscheduler.settings.Motion.FULL) launch {
+            tilt.animateTo(-16f, androidx.compose.animation.core.tween(90))
+            tilt.animateTo(12f, androidx.compose.animation.core.tween(110))
+            tilt.animateTo(0f, look.pop())
+        }
+    }
     FilterChip(
         selected = selected,
         onClick = onClick,
         label = { Text(label, maxLines = 1) },
         leadingIcon = {
             Icon(
-                if (selected) Icons.Filled.Check else icon, contentDescription = null,
-                tint = if (selected) AppTheme.colors.ink else accent, modifier = Modifier.size(18.dp)
+                icon, contentDescription = null, tint = accent,
+                modifier = Modifier.size(18.dp).graphicsLayer { rotationZ = tilt.value }
             )
         },
-        modifier = Modifier.heightIn(min = 48.dp)
+        modifier = Modifier.heightIn(min = 48.dp).graphicsLayer { scaleX = scale.value; scaleY = scale.value }
     )
 }
 
@@ -460,5 +489,119 @@ fun CategoriesSection() {
             onDelete = { vm.delete(cat.categoryId); editing = null },
             onDismiss = { editing = null }
         )
+    }
+}
+
+// ============================================================================
+// ปุ่มเพิ่มด่วน (หน้าเพิ่มหลายวัน)
+// ============================================================================
+
+/** หมวดทั้งหมด (ประเภทพื้นฐาน + ที่สร้างเอง) เรียงที่ใช้บ่อยก่อน */
+@Composable
+fun rememberQuickOptions(): List<Pair<TaskKind, CategoryEntity?>> {
+    val vm: CategoryViewModel = hiltViewModel()
+    val categories by vm.categories.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val quick = remember { com.example.smartscheduler.settings.QuickStore(context) }
+    return remember(categories) {
+        val base = TaskKind.values().map { k -> Triple(k, null as CategoryEntity?, quick.count(com.example.smartscheduler.settings.QuickStore.keyFor(k.code, null))) }
+        val custom = categories.map { c -> Triple(TaskKind.from(c.kind), c, quick.count(com.example.smartscheduler.settings.QuickStore.keyFor(c.kind, c.categoryId))) }
+        (base + custom).withIndex()
+            .sortedWith(compareByDescending<IndexedValue<Triple<TaskKind, CategoryEntity?, Int>>> { it.value.third }.thenBy { it.index })
+            .map { it.value.first to it.value.second }
+    }
+}
+
+/**
+ * ตารางไอคอนหมวด แถวละ 4
+ *  - แตะ = เพิ่มเข้ารายการเลย (ชื่อหมวด + เวลาที่ใช้ล่าสุด)
+ *  - กดค้าง = เปิดหน้าแก้ก่อนเพิ่ม
+ *  - ช่องสุดท้าย = เพิ่มรายการเอง (สร้างหมวดใหม่ได้ในหน้านั้น)
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+fun QuickAddGrid(
+    onAdd: (TaskKind, CategoryEntity?) -> Unit,
+    onEdit: (TaskKind, CategoryEntity?) -> Unit,
+    onCustom: () -> Unit
+) {
+    val c = AppTheme.colors
+    val options = rememberQuickOptions()
+    val cells: List<Pair<TaskKind, CategoryEntity?>?> = options + listOf(null)
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        cells.chunked(4).forEach { row ->
+            Row(Modifier.fillMaxWidth()) {
+                row.forEach { item ->
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.TopCenter) {
+                        if (item == null) {
+                            QuickTile(
+                                label = "เพิ่มเอง", icon = Icons.Filled.Add, accent = c.muted, dashed = true,
+                                onClick = onCustom, onLongClick = onCustom
+                            )
+                        } else {
+                            val (k, cat) = item
+                            QuickTile(
+                                label = cat?.name ?: k.label,
+                                icon = taskIcon(k, null, cat?.categoryId),
+                                accent = taskAccent(k, null, cat?.categoryId),
+                                onClick = { onAdd(k, cat) },
+                                onLongClick = { onEdit(k, cat) }
+                            )
+                        }
+                    }
+                }
+                repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
+    }
+}
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun QuickTile(
+    label: String,
+    icon: ImageVector,
+    accent: Color,
+    dashed: Boolean = false,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
+) {
+    val c = AppTheme.colors
+    val look = com.example.smartscheduler.settings.LocalAppearance.current
+    val scope = rememberCoroutineScope()
+    val scale = remember { androidx.compose.animation.core.Animatable(1f) }
+    fun bounce() {
+        if (!look.animate) return
+        scope.launch {
+            scale.animateTo(0.86f, androidx.compose.animation.core.tween(80))
+            scale.animateTo(1f, look.pop())
+        }
+    }
+    Column(
+        Modifier
+            .widthIn(min = 64.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .combinedClickable(
+                onClick = { bounce(); onClick() },
+                onLongClick = { onLongClick() },
+                onLongClickLabel = "แก้ก่อนเพิ่ม"
+            )
+            .semantics { contentDescription = "เพิ่ม $label" }
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            Modifier
+                .size(52.dp)
+                .graphicsLayer { scaleX = scale.value; scaleY = scale.value }
+                .clip(RoundedCornerShape(16.dp))
+                .background(if (dashed) Color.Transparent else accent.copy(alpha = 0.16f))
+                .then(if (dashed) Modifier.border(1.5.dp, c.outline, RoundedCornerShape(16.dp)) else Modifier),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = null, tint = accent, modifier = Modifier.size(24.dp))
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(label, style = MaterialTheme.typography.labelMedium, color = if (dashed) c.muted else c.ink, maxLines = 1)
     }
 }

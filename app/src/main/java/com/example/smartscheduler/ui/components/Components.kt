@@ -588,9 +588,28 @@ fun TaskEditorDialog(
     onDelete: (() -> Unit)? = null,
     done: Boolean? = null,
     onDoneChange: ((Boolean) -> Unit)? = null,
+    /** เนื้อหาเพิ่มบนสุด เช่น แถวช่วงวันที่ตอนลากเลือกหลายวัน */
+    topContent: (@Composable () -> Unit)? = null,
+    saveLabel: String = "บันทึก",
     onDismiss: () -> Unit
 ) {
     var draft by remember { mutableStateOf(initial ?: TaskDraft()) }
+    // แตะหมวดแล้วเติมให้: ชื่อ (ถ้ายังว่างหรือเป็นชื่อที่เติมให้ก่อนหน้า) + เวลาที่ใช้ล่าสุด (เฉพาะรายการใหม่)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val quick = remember { com.example.smartscheduler.settings.QuickStore(context) }
+    val categoryMap = LocalCategories.current
+    val isNew = onDelete == null
+    var autoTitle by remember { mutableStateOf<String?>(null) }
+    val flash = remember { androidx.compose.animation.core.Animatable(0f) }
+    var flashKey by remember { mutableStateOf(0) }
+    val look = com.example.smartscheduler.settings.LocalAppearance.current
+    LaunchedEffect(flashKey) {
+        if (flashKey > 0 && look.animate) {
+            flash.snapTo(0.28f)
+            flash.animateTo(0f, tween(550))
+        }
+    }
+    val flashColor = taskAccent(draft.kind, draft.color, draft.categoryId).copy(alpha = flash.value)
     val timeOk = draft.endMin > draft.startMin && draft.endMin <= 24 * 60
     val valid = draft.title.isNotBlank() && timeOk
     val kinds = TaskKind.values().toList()
@@ -604,17 +623,30 @@ fun TaskEditorDialog(
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                topContent?.invoke()
                 CategoryChips(kind = draft.kind, categoryId = draft.categoryId) { k, cat ->
-                    draft = draft.copy(kind = k, categoryId = cat)
+                    var d = draft.copy(kind = k, categoryId = cat)
+                    var filled = false
+                    val name = cat?.let { categoryMap[it]?.name }
+                    if (name != null && (draft.title.isBlank() || draft.title == autoTitle)) {
+                        d = d.copy(title = name); autoTitle = name; filled = true
+                    }
+                    if (isNew) {
+                        quick.lastTimes(com.example.smartscheduler.settings.QuickStore.keyFor(k.code, cat))?.let { (st, en) ->
+                            if (st != d.startMin || en != d.endMin) { d = d.copy(startMin = st, endMin = en); filled = true }
+                        }
+                    }
+                    draft = d
+                    if (filled) flashKey++
                 }
                 OutlinedTextField(
                     value = draft.title,
                     onValueChange = { draft = draft.copy(title = it) },
                     label = { Text("ชื่อ") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().background(flashColor, RoundedCornerShape(4.dp))
                 )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth().background(flashColor, RoundedCornerShape(16.dp)), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TimeButton("เริ่ม", draft.startMin, Modifier.weight(1f)) { s ->
                         val keep = (draft.endMin - draft.startMin).takeIf { it > 0 } ?: 60
                         draft = draft.copy(startMin = s, endMin = minOf(s + keep, 24 * 60))
@@ -660,7 +692,13 @@ fun TaskEditorDialog(
                 if (footnote != null) Hint(footnote)
             }
         },
-        confirmButton = { TextButton(enabled = valid, onClick = { onSave(draft) }) { Text("บันทึก") } },
+        confirmButton = {
+            TextButton(enabled = valid, onClick = {
+                // จำเวลาและนับการใช้ของหมวดนี้ ไว้เติมให้ครั้งหน้า และเรียงหมวดที่ใช้บ่อยก่อน
+                quick.record(com.example.smartscheduler.settings.QuickStore.keyFor(draft.kind.code, draft.categoryId), draft.startMin, draft.endMin)
+                onSave(draft)
+            }) { Text(saveLabel) }
+        },
         dismissButton = {
             Row {
                 if (onDelete != null) {

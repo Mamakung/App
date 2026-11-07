@@ -1,5 +1,21 @@
 package com.example.smartscheduler.ui.screens.dashboard
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.ui.graphics.graphicsLayer
+import com.example.smartscheduler.settings.LocalAppearance
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -30,6 +46,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChevronLeft
@@ -199,6 +216,11 @@ class DashboardViewModel @Inject constructor(
         }
     }
 
+    /** เพิ่มกิจกรรมเดียวให้ทุกวันตั้งแต่ [from] ถึง [to] (จากการลากเลือกในปฏิทิน) */
+    fun addToRange(from: LocalDate, to: LocalDate, draft: TaskDraft) {
+        viewModelScope.launch { repo.addTaskToRange(uid, from, to, draft.toScheduleTask(null, 0)) }
+    }
+
     fun delete(task: ScheduleTaskEntity, scope: DeleteScope = DeleteScope.THIS) {
         viewModelScope.launch { repo.deleteTask(uid, task, scope) }
     }
@@ -259,6 +281,8 @@ fun DashboardScreen(
     BackHandler(enabled = state.mode != CalendarMode.MONTH) { viewModel.setMode(CalendarMode.MONTH) }
     var editing by remember { mutableStateOf<DashEdit?>(null) }
     var deleting by remember { mutableStateOf<DashEdit?>(null) }
+    // ลากเลือกหลายวันในปฏิทินแล้วปล่อย: เพิ่มกิจกรรมเดียวให้ทุกวันในช่วง
+    var rangeEdit by remember { mutableStateOf<Pair<LocalDate, LocalDate>?>(null) }
     val context = LocalContext.current
     val nowMin = rememberNowMinutes()
     val today = LocalDate.now()
@@ -298,7 +322,7 @@ fun DashboardScreen(
                         days = state.range,
                         onTap = viewModel::openDay,
                         onAddDay = { d -> viewModel.select(d); editing = DashEdit(null, d) },
-                        onAddRange = onOpenBatchRange,
+                        onAddRange = { a, b -> rangeEdit = a to b },
                         onShiftMonth = viewModel::step
                     )
                     Spacer(Modifier.height(20.dp))
@@ -382,6 +406,24 @@ fun DashboardScreen(
         )
     }
 
+    rangeEdit?.let { (a, b) ->
+        val n = java.time.temporal.ChronoUnit.DAYS.between(a, b) + 1
+        TaskEditorDialog(
+            title = "เพิ่มกิจกรรม",
+            initial = defaultDraft(TaskKind.TASK, start = 9 * 60),
+            topContent = {
+                RangeRow(from = a, to = b, days = n.toInt(), onMore = { rangeEdit = null; onOpenBatchRange(a, b) })
+            },
+            saveLabel = "บันทึก $n วัน",
+            onSave = { draft ->
+                viewModel.addToRange(a, b, draft)
+                Toast.makeText(context, "เพิ่ม \"${draft.title}\" ให้ $n วันแล้ว", Toast.LENGTH_SHORT).show()
+                rangeEdit = null
+            },
+            onDismiss = { rangeEdit = null }
+        )
+    }
+
     deleting?.let { d ->
         DeleteRepeatingDialog(
             edit = d,
@@ -401,6 +443,43 @@ fun DashboardScreen(
         )
     }
 }
+
+// ============================================================================
+// Range row (ลากเลือกหลายวัน)
+// ============================================================================
+
+/** แถว "ตั้งแต่ → ถึง · n วัน" บนหน้าต่างเพิ่มกิจกรรม + ลิงก์ไปหน้าเพิ่มหลายวันแบบเต็ม */
+@Composable
+private fun RangeRow(from: LocalDate, to: LocalDate, days: Int, onMore: () -> Unit) {
+    val c = AppTheme.colors
+    Column {
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.ground.copy(alpha = 0.5f)).padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Hint("ตั้งแต่")
+                Text(from.format(shortWeekday), style = MaterialTheme.typography.titleSmall)
+            }
+            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "ถึง", tint = c.muted, modifier = Modifier.padding(horizontal = 10.dp).size(18.dp))
+            Column {
+                Hint("ถึง")
+                Text(to.format(shortWeekday), style = MaterialTheme.typography.titleSmall)
+            }
+            Spacer(Modifier.weight(1f))
+            Text(
+                "$days วัน",
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = c.ground,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(LocalAppearance.current.dragColor).padding(horizontal = 9.dp, vertical = 2.dp)
+            )
+        }
+        TextButton(onClick = onMore) { Text("เลือกวันเอง / เพิ่มหลายกิจกรรม") }
+    }
+}
+
+private val shortWeekday = java.time.format.DateTimeFormatter.ofPattern("EEE d MMM", java.util.Locale("th", "TH"))
 
 // ============================================================================
 // Delete repeating task
@@ -538,67 +617,81 @@ private fun MonthGrid(
     onShiftMonth: (Boolean) -> Unit
 ) {
     val c = AppTheme.colors
+    val look = LocalAppearance.current
+    val selColor = look.dragColor
     val today = LocalDate.now()
     val first = Recurrence.weekStart(anchor.withDayOfMonth(1))
 
     // ---------- กดค้างแล้วลากเลือกช่วงวัน ----------
-    // กดค้างแล้วปล่อยที่เดิม = เพิ่มกิจกรรมวันนั้น / ลากไปหลายวัน = เปิดหน้าเพิ่มหลายวันพร้อมช่วงที่เลือก
-    // ลากไปค้างที่ขอบล่าง/บนของตาราง = เลื่อนไปเดือนถัดไป/ก่อนหน้า
+    // กดค้างแล้วปล่อยที่เดิม = เพิ่มกิจกรรมวันนั้น / ลากไปหลายวัน = เพิ่มกิจกรรมให้ทุกวันในช่วง
+    // ลากถึงช่องมุมขวาล่าง (หรือเลยตาราง) = เดือนถัดไป / มุมซ้ายบน = เดือนก่อน
     val haptic = LocalHapticFeedback.current
-    val density = LocalDensity.current
-    val edgePx = with(density) { 18.dp.toPx() }
+    val scope = rememberCoroutineScope()
     var gridSize by remember { mutableStateOf(IntSize.Zero) }
     var dragFrom by remember { mutableStateOf<LocalDate?>(null) }
     var dragTo by remember { mutableStateOf<LocalDate?>(null) }
-    var fingerY by remember { mutableStateOf(0f) }
     var fingerPos by remember { mutableStateOf(Offset.Zero) }
     var dragging by remember { mutableStateOf(false) }
+    // หลังปล่อยนิ้ว: ค้างช่วงไว้ให้เห็นคลื่นกระเพื่อมก่อนเปิดหน้าต่าง
+    var holding by remember { mutableStateOf(false) }
+    var waveKey by remember { mutableStateOf(0) }
     val currentFirst by rememberUpdatedState(first)
     val addDay by rememberUpdatedState(onAddDay)
     val addRange by rememberUpdatedState(onAddRange)
     val shift by rememberUpdatedState(onShiftMonth)
 
-    fun dateAt(pos: Offset): LocalDate {
+    fun cellAt(pos: Offset): Pair<Int, Int> {
         val w = gridSize.width.coerceAtLeast(1) / 7f
         val h = gridSize.height.coerceAtLeast(1) / 6f
-        val col = (pos.x / w).toInt().coerceIn(0, 6)
-        val row = (pos.y / h).toInt().coerceIn(0, 5)
+        return (pos.y / h).toInt().coerceIn(0, 5) to (pos.x / w).toInt().coerceIn(0, 6)
+    }
+    fun dateAt(pos: Offset): LocalDate {
+        val (row, col) = cellAt(pos)
         return currentFirst.plusDays((row * 7 + col).toLong())
     }
 
-    // ค้างที่ขอบ: เลื่อนเดือนทุก ~0.6 วินาที แล้วเลือกวันใต้นิ้วในเดือนใหม่
-    val edgeDir = when {
-        !dragging -> 0
-        fingerY > gridSize.height - edgePx -> 1
-        fingerY < edgePx -> -1
-        else -> 0
+    // มุมเปลี่ยนเดือน (ต้องลากออกจากวันแรกก่อน กันเลื่อนเดือนตั้งแต่เริ่มกด)
+    val cornerDir = if (!dragging || dragTo == dragFrom && fingerPos.y in 0f..gridSize.height.toFloat()) 0 else {
+        val (row, col) = cellAt(fingerPos)
+        when {
+            fingerPos.y > gridSize.height || (row == 5 && col == 6) -> 1
+            fingerPos.y < 0f || (row == 0 && col == 0) -> -1
+            else -> 0
+        }
     }
-    LaunchedEffect(edgeDir) {
-        while (edgeDir != 0) {
-            delay(600)
-            shift(edgeDir > 0)
+    LaunchedEffect(cornerDir) {
+        if (cornerDir == 0) return@LaunchedEffect
+        delay(280)
+        while (true) {
+            shift(cornerDir > 0)
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            delay(32)
+            delay(40)
             dragTo = dateAt(fingerPos)
+            delay(750)
         }
     }
 
-    val rangeStart = listOfNotNull(dragFrom, dragTo).minOrNull()
-    val rangeEnd = listOfNotNull(dragFrom, dragTo).maxOrNull()
-    fun inDragRange(d: LocalDate) = dragging && rangeStart != null && rangeEnd != null && !d.isBefore(rangeStart) && !d.isAfter(rangeEnd)
+    val active = dragging || holding
+    val rangeStart = if (active) rangeStartOf(dragFrom, dragTo) else null
+    val rangeEnd = if (active) rangeEndOf(dragFrom, dragTo) else null
+    fun inRangeOf(d: LocalDate) = rangeStart != null && rangeEnd != null && !d.isBefore(rangeStart) && !d.isAfter(rangeEnd)
 
     Column(Modifier.fillMaxWidth()) {
         Box(Modifier.fillMaxWidth().height(22.dp).padding(bottom = 4.dp), contentAlignment = Alignment.Center) {
-            if (dragging && rangeStart != null && rangeEnd != null) {
+            if (active && rangeStart != null && rangeEnd != null) {
                 // ระหว่างลาก: แทนแถบชื่อวันด้วยสรุปช่วงที่เลือก
                 val n = java.time.temporal.ChronoUnit.DAYS.between(rangeStart, rangeEnd) + 1
+                val pillScale = remember { Animatable(0.85f) }
+                LaunchedEffect(Unit) { pillScale.animateTo(1f, look.pop()) }
                 Text(
                     if (n == 1L) "${shortDay(rangeStart)} · ปล่อยเพื่อเพิ่มกิจกรรม"
                     else "${shortDay(rangeStart)} – ${shortDay(rangeEnd)} · $n วัน",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = c.ground,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(c.study).padding(horizontal = 10.dp, vertical = 1.dp)
+                    modifier = Modifier
+                        .graphicsLayer { scaleX = pillScale.value; scaleY = pillScale.value }
+                        .clip(RoundedCornerShape(8.dp)).background(selColor).padding(horizontal = 10.dp, vertical = 1.dp)
                 )
             } else {
                 Row(Modifier.fillMaxWidth()) {
@@ -614,21 +707,22 @@ private fun MonthGrid(
                 }
             }
         }
-        Column(
+        Box(
             Modifier
                 .fillMaxWidth()
                 .onSizeChanged { gridSize = it }
                 .pointerInput(Unit) {
                     detectDragGesturesAfterLongPress(
                         onDragStart = { pos ->
+                            if (holding) return@detectDragGesturesAfterLongPress
                             val d = dateAt(pos)
-                            dragFrom = d; dragTo = d; fingerPos = pos; fingerY = pos.y; dragging = true
+                            dragFrom = d; dragTo = d; fingerPos = pos; dragging = true
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         },
                         onDrag = { change, amount ->
                             change.consume()
+                            if (!dragging) return@detectDragGesturesAfterLongPress
                             fingerPos += amount
-                            fingerY = fingerPos.y
                             val d = dateAt(fingerPos)
                             if (d != dragTo) {
                                 dragTo = d
@@ -638,92 +732,55 @@ private fun MonthGrid(
                         onDragEnd = {
                             val a = rangeStartOf(dragFrom, dragTo)
                             val b = rangeEndOf(dragFrom, dragTo)
-                            dragging = false; dragFrom = null; dragTo = null
-                            if (a != null && b != null) {
+                            dragging = false
+                            if (a == null || b == null) { dragFrom = null; dragTo = null; return@detectDragGesturesAfterLongPress }
+                            // กระเพื่อมเป็นคลื่นจากวันแรกถึงวันสุดท้าย แล้วค่อยเปิดหน้าต่างเพิ่มกิจกรรม
+                            holding = true
+                            waveKey++
+                            scope.launch {
+                                val shown = java.time.temporal.ChronoUnit.DAYS.between(a, b).coerceAtMost(41)
+                                delay(if (look.animate) 260L + shown * 18L else 0L)
                                 if (a == b) addDay(a) else addRange(a, b)
+                                holding = false; dragFrom = null; dragTo = null
                             }
                         },
                         onDragCancel = { dragging = false; dragFrom = null; dragTo = null }
                     )
                 }
         ) {
-        for (week in 0 until 6) {
-            Row(Modifier.fillMaxWidth()) {
-                for (col in 0..6) {
-                    val d = first.plusDays((week * 7 + col).toLong())
-                    val inMonth = d.month == anchor.month
-                    val tasks = days[d]?.tasks.orEmpty()
-                    // ไอคอนใต้วันที่: ไอคอนเดียวกันรวมเป็นกอง แต่ละชั้นคือหนึ่งสี เรียงตามเวลา
-                    val marks = tasks.sortedBy { it.startMin }
-                        .map { it.iconVector() to it.accent() }
-                        .groupBy({ it.first }, { it.second })
-                        .map { (icon, colors) -> icon to colors.distinct() }
-                    val kindsUsed = kindOrder.filter { k -> tasks.any { it.kind == k.code } }
-                    val inRange = inDragRange(d)
-                    val isSel = d == selected && !dragging
-                    val cellBg by animateColorAsState(
-                        when {
-                            inRange -> c.study.copy(alpha = 0.32f)
-                            isSel -> c.ink
-                            else -> Color.Transparent
-                        },
-                        tween(120), label = "cellBg"
-                    )
-                    val summary = if (tasks.isEmpty()) "ว่าง"
-                        else "${tasks.size} รายการ " + kindsUsed.joinToString(" ") { it.label }
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            .heightIn(min = 56.dp)
-                            .padding(2.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(cellBg)
-                            .then(if (inRange && (d == rangeStart || d == rangeEnd)) Modifier.border(2.dp, c.study, RoundedCornerShape(12.dp)) else Modifier)
-                            // ระหว่างกดค้าง/ลาก ไม่นับเป็นการแตะ (กันเปิดรายวันตอนปล่อยนิ้ว)
-                            .selectable(selected = isSel, role = Role.Button, onClick = { if (!dragging) onTap(d) })
-                            .semantics { contentDescription = "${d.format(longDate)} $summary" + if (d == today) " วันนี้" else "" }
-                            .padding(vertical = 6.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Box(
-                            Modifier
-                                .size(28.dp)
-                                .then(if (d == today && !isSel) Modifier.border(1.5.dp, c.now, CircleShape) else Modifier),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                "${d.dayOfMonth}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = if (isSel || d == today) FontWeight.SemiBold else FontWeight.Normal,
-                                color = when {
-                                    isSel -> c.ground
-                                    !inMonth -> c.muted.copy(alpha = 0.55f)
-                                    else -> c.ink
-                                }
-                            )
-                        }
-                        Spacer(Modifier.height(4.dp))
-                        // กองไอคอนเรียงในช่อง ถ้าไม่พอที่แสดง "+จำนวนกองที่เหลือ"
-                        val fit = fitStacks(marks.map { it.second.size }, budget = 40)
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.height(16.dp)
-                        ) {
-                            marks.take(fit).forEach { (icon, colors) ->
-                                StackedIcon(
-                                    icon = icon,
-                                    colors = if (isSel) listOf(c.ground) else colors,
-                                    layers = colors.size,
-                                    halo = if (isSel) c.ink else c.ground
-                                )
-                            }
-                            if (fit < marks.size) {
-                                Text(
-                                    "+${marks.size - fit}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (isSel) c.ground else c.muted,
-                                    maxLines = 1
+            // เปลี่ยนเดือน: ตารางเลื่อนขึ้น/ลงนุ่มๆ
+            AnimatedContent(
+                targetState = first,
+                transitionSpec = {
+                    if (!look.animate) EnterTransition.None togetherWith ExitTransition.None
+                    else {
+                        val dir = if (targetState.isAfter(initialState)) 1 else -1
+                        (slideInVertically(tween(260)) { dir * it / 6 } + fadeIn(tween(200))) togetherWith
+                            (slideOutVertically(tween(180)) { -dir * it / 6 } + fadeOut(tween(150)))
+                    }
+                },
+                label = "month"
+            ) { gridFirst ->
+                Column(Modifier.fillMaxWidth()) {
+                    for (week in 0 until 6) {
+                        Row(Modifier.fillMaxWidth()) {
+                            for (col in 0..6) {
+                                val d = gridFirst.plusDays((week * 7 + col).toLong())
+                                MonthCell(
+                                    date = d,
+                                    inMonth = d.month == gridFirst.plusDays(14).month,
+                                    tasks = days[d]?.tasks.orEmpty(),
+                                    isSelected = d == selected && !active,
+                                    isToday = d == today,
+                                    inRange = inRangeOf(d),
+                                    isEdge = d == rangeStart || d == rangeEnd,
+                                    isHot = dragging && d == dragTo,
+                                    waveKey = waveKey,
+                                    waveDelay = if (rangeStart != null) java.time.temporal.ChronoUnit.DAYS.between(rangeStart, d).coerceAtLeast(0) * 18L else 0L,
+                                    cornerHint = dragging && dragTo != dragFrom && week == 5 && col == 6,
+                                    selColor = selColor,
+                                    onTap = { if (!active) onTap(d) },
+                                    modifier = Modifier.weight(1f)
                                 )
                             }
                         }
@@ -731,13 +788,156 @@ private fun MonthGrid(
                 }
             }
         }
-        }
         Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             kindOrder.forEach { k ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(k.icon(), contentDescription = null, tint = k.color(), modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(4.dp))
                     Hint(k.label)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * หนึ่งช่องวันในตารางเดือน
+ * ตอนลากเลือก: ทุกวันในช่วงมีกรอบมนของตัวเอง (สีจากตั้งค่า) เด้งเข้าตอนนิ้วผ่าน หดออกตอนหลุดช่วง
+ * วันใต้นิ้วใหญ่ขึ้นนิดและกรอบหนากว่า / ปล่อยนิ้วแล้วกระเพื่อมเป็นคลื่น
+ */
+@Composable
+private fun MonthCell(
+    date: LocalDate,
+    inMonth: Boolean,
+    tasks: List<ScheduleTaskEntity>,
+    isSelected: Boolean,
+    isToday: Boolean,
+    inRange: Boolean,
+    isEdge: Boolean,
+    isHot: Boolean,
+    waveKey: Int,
+    waveDelay: Long,
+    cornerHint: Boolean,
+    selColor: Color,
+    onTap: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val c = AppTheme.colors
+    val look = LocalAppearance.current
+    // ไอคอนใต้วันที่: ไอคอนเดียวกันรวมเป็นกอง แต่ละชั้นคือหนึ่งสี เรียงตามเวลา
+    val marks = tasks.sortedBy { it.startMin }
+        .map { it.iconVector() to it.accent() }
+        .groupBy({ it.first }, { it.second })
+        .map { (icon, colors) -> icon to colors.distinct() }
+    val kindsUsed = kindOrder.filter { k -> tasks.any { it.kind == k.code } }
+
+    // 0 = ไม่อยู่ในช่วง, 1 = อยู่ในช่วง (สปริงเกิน 1 นิดหนึ่ง = เด้ง)
+    val sel = remember { Animatable(0f) }
+    LaunchedEffect(inRange) { sel.animateTo(if (inRange) 1f else 0f, if (inRange) look.pop() else look.out()) }
+    val hot by animateFloatAsState(if (isHot) 1f else 0f, look.pop(), label = "hot")
+    val wave = remember { Animatable(0f) }
+    LaunchedEffect(waveKey) {
+        if (waveKey > 0 && inRange && look.animate) {
+            delay(waveDelay)
+            wave.animateTo(1f, tween(140))
+            wave.animateTo(0f, look.pop())
+        }
+    }
+    val selBg by animateColorAsState(if (isSelected) c.ink else Color.Transparent, tween(150), label = "cellBg")
+    val corner = if (cornerHint && look.animate) {
+        val t = rememberInfiniteTransition(label = "corner")
+        t.animateFloat(0.35f, 0.9f, infiniteRepeatable(tween(600), RepeatMode.Reverse), label = "cornerA").value
+    } else if (cornerHint) 0.7f else 0f
+
+    val summary = if (tasks.isEmpty()) "ว่าง" else "${tasks.size} รายการ " + kindsUsed.joinToString(" ") { it.label }
+    Box(
+        modifier
+            .heightIn(min = 56.dp)
+            .padding(2.dp)
+            .selectable(selected = isSelected, role = Role.Button, onClick = onTap)
+            .semantics { contentDescription = "${date.format(longDate)} $summary" + if (isToday) " วันนี้" else "" }
+    ) {
+        // ชั้นไฮไลต์ตอนลากเลือก (กรอบทุกช่อง)
+        val p = sel.value
+        if (p > 0.001f) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .graphicsLayer {
+                        val s = (0.82f + 0.18f * p) * (1f + 0.09f * hot) * (1f + 0.12f * wave.value)
+                        scaleX = s; scaleY = s
+                        alpha = p.coerceIn(0f, 1f)
+                    }
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(selColor.copy(alpha = 0.14f + 0.10f * hot + 0.14f * wave.value))
+                    .border(
+                        (1.6f + (if (isEdge) 0.6f else 0f) + 1.0f * hot).dp,
+                        selColor.copy(alpha = 0.85f),
+                        RoundedCornerShape(12.dp)
+                    )
+            )
+        }
+        // วันที่เลือกอยู่ (ไม่ได้ลาก)
+        Box(Modifier.matchParentSize().clip(RoundedCornerShape(12.dp)).background(selBg))
+        // มุมเปลี่ยนเดือน: กรอบเส้นประกะพริบเบาๆ
+        if (corner > 0f) {
+            Box(
+                Modifier.matchParentSize().drawBehind {
+                    drawRoundRect(
+                        color = selColor.copy(alpha = corner),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(12.dp.toPx()),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(
+                            width = 2.dp.toPx(),
+                            pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 8f))
+                        )
+                    )
+                }
+            )
+        }
+        Column(
+            Modifier.fillMaxWidth().padding(vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                Modifier
+                    .size(28.dp)
+                    .then(if (isToday && !isSelected && !inRange) Modifier.border(1.5.dp, c.now, CircleShape) else Modifier),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "${date.dayOfMonth}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (isSelected || isToday || isHot) FontWeight.SemiBold else FontWeight.Normal,
+                    color = when {
+                        isSelected -> c.ground
+                        !inMonth -> c.muted.copy(alpha = 0.55f)
+                        else -> c.ink
+                    }
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            // กองไอคอนเรียงในช่อง ถ้าไม่พอที่แสดง "+จำนวนกองที่เหลือ"
+            val fit = fitStacks(marks.map { it.second.size }, budget = 40)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.height(16.dp)
+            ) {
+                marks.take(fit).forEach { (icon, colors) ->
+                    StackedIcon(
+                        icon = icon,
+                        colors = if (isSelected) listOf(c.ground) else colors,
+                        layers = colors.size,
+                        halo = if (isSelected) c.ink else c.ground
+                    )
+                }
+                if (fit < marks.size) {
+                    Text(
+                        "+${marks.size - fit}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isSelected) c.ground else c.muted,
+                        maxLines = 1
+                    )
                 }
             }
         }

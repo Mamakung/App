@@ -72,7 +72,17 @@ fun AppNavGraph(startDestination: String = Routes.AUTH, openUpdateOnStart: Boole
     val categoryMap = remember(categories) { categories.associateBy { it.categoryId } }
 
     // หมวดหมู่ที่สร้างเอง ใช้หาสี/ไอคอน/ชื่อของกิจกรรมทุกหน้า
-    CompositionLocalProvider(LocalCategories provides categoryMap) {
+    val settingsViewModel: com.example.smartscheduler.ui.screens.settings.SettingsViewModel = hiltViewModel()
+    val dragColor by settingsViewModel.dragColor.collectAsState()
+    val motion by settingsViewModel.motion.collectAsState()
+    val appearance = remember(dragColor, motion) {
+        com.example.smartscheduler.settings.Appearance(androidx.compose.ui.graphics.Color(dragColor.argb), motion)
+    }
+
+    CompositionLocalProvider(
+        LocalCategories provides categoryMap,
+        com.example.smartscheduler.settings.LocalAppearance provides appearance
+    ) {
     Scaffold(
         bottomBar = {
             if (tabs.any { it.route == currentRoute }) {
