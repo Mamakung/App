@@ -340,7 +340,7 @@ fun BatchAssignScreen(onBack: () -> Unit, viewModel: BatchAssignViewModel = hilt
                             key(t) {
                                 TimeRow(
                                     title = t.title, kind = t.kind, startMin = t.startMin, endMin = t.endMin,
-                                    reminder = t.reminder, showDivider = i > 0, color = t.color, icon = t.icon, categoryId = t.categoryId,
+                                    reminder = t.reminder, showDivider = i > 0, color = t.color, icon = t.icon, categoryId = t.categoryId, alarm = t.alarm,
                                     onClick = { editing = BatchEdit(i, t.kind) },
                                     trailing = {
                                         // ถังขยะสีแดง: ลบออกจากรายการทันที (ยังไม่ได้บันทึกลงปฏิทิน จึงไม่ถาม)

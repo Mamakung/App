@@ -54,6 +54,9 @@ interface RoutineDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertTemplateTasks(tasks: List<RoutineTemplateTaskEntity>)
 
+    @Query("UPDATE routine_template_tasks SET reminderEnabled = :reminder, alarm = :alarm, alarmSound = :sound WHERE templateTaskId = :templateTaskId")
+    suspend fun setAlert(templateTaskId: Long, reminder: Boolean, alarm: Boolean, sound: String?)
+
     @Query("UPDATE routine_template_tasks SET kind = :kind, categoryId = :categoryId, color = :color, icon = :icon WHERE templateTaskId = :templateTaskId")
     suspend fun setStyle(templateTaskId: Long, kind: String, categoryId: Long?, color: String?, icon: String?)
 

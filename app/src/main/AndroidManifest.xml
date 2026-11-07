@@ -13,6 +13,10 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- นาฬิกาปลุก: เล่นเสียงวน + ขึ้นเต็มจอตอนล็อกจอ + สั่น -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- อัปเดตแอปจากในแอป (ดาวน์โหลด APK จาก GitHub Releases แล้วติดตั้ง) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -50,6 +54,24 @@
         <receiver
             android:name=".notification.ReminderBroadcastReceiver"
             android:exported="false" />
+
+        <!-- นาฬิกาปลุก -->
+        <receiver
+            android:name=".notification.AlarmReceiver"
+            android:exported="false" />
+        <service
+            android:name=".notification.AlarmService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+        <activity
+            android:name=".notification.AlarmActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.SmartSchedulerAI" />
 
         <receiver
             android:name=".notification.BootRescheduleReceiver"

@@ -10,9 +10,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Snooze
+import androidx.compose.material.icons.filled.Vibration
+import androidx.compose.foundation.selection.toggleable
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.launch
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,7 +52,25 @@ import kotlinx.coroutines.delay
 import javax.inject.Inject
 
 @HiltViewModel
-class SettingsViewModel @Inject constructor(private val settings: AppSettings) : ViewModel() {
+class SettingsViewModel @Inject constructor(
+    private val settings: AppSettings,
+    private val repo: com.example.smartscheduler.data.repository.ScheduleRepository,
+    private val user: com.example.smartscheduler.data.session.CurrentUser
+) : ViewModel() {
+    val notifyOn = settings.notifyOn
+    val alarmOn = settings.alarmOn
+    val notifySound = settings.notifySound
+    val alarmSound = settings.alarmSound
+    val vibrate = settings.vibrate
+    val snooze = settings.snooze
+    /** เปิด/ปิดทั้งหมดแล้วต้องตั้งเวลาเตือนใหม่ทุกวันข้างหน้า */
+    private fun reschedule() = viewModelScope.launch { repo.rescheduleUpcomingAlarms(user.uid) }
+    fun setNotifyOn(v: Boolean) { settings.setNotifyOn(v); reschedule() }
+    fun setAlarmOn(v: Boolean) { settings.setAlarmOn(v); reschedule() }
+    fun setNotifySound(v: String) = settings.setNotifySound(v)
+    fun setAlarmSound(v: String) = settings.setAlarmSound(v)
+    fun setVibrate(v: Boolean) = settings.setVibrate(v)
+    fun setSnooze(v: Int) = settings.setSnooze(v)
     val fabStyle = settings.fabStyle
     val dragColor = settings.dragColor
     val motion = settings.motion
@@ -66,6 +93,7 @@ private fun dragColorLabel(key: String): String = when {
 @Composable
 fun SettingsScreen(
     onOpenAppearance: () -> Unit,
+    onOpenAlerts: () -> Unit,
     onOpenCategories: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
@@ -94,6 +122,15 @@ fun SettingsScreen(
                     title = "ปรับแต่งหน้าตา",
                     subtitle = "สีตอนลาก ${dragColorLabel(dragColor)} · เคลื่อนไหว${motion.label} · ${fabStyle.label}",
                     onClick = onOpenAppearance
+                )
+                HorizontalDivider(color = c.line)
+                val notifyOn by viewModel.notifyOn.collectAsState()
+                val alarmOn by viewModel.alarmOn.collectAsState()
+                SettingsRow(
+                    icon = Icons.Filled.Alarm,
+                    title = "แจ้งเตือนและนาฬิกาปลุก",
+                    subtitle = "แจ้งเตือน" + (if (notifyOn) "เปิด" else "ปิด") + " · นาฬิกาปลุก" + (if (alarmOn) "เปิด" else "ปิด"),
+                    onClick = onOpenAlerts
                 )
                 HorizontalDivider(color = c.line)
                 SettingsRow(
@@ -274,6 +311,132 @@ private fun AppearancePreview(colorLabel: String) {
             }
         }
     }
+}
+
+// ============================================================================
+// แจ้งเตือนและนาฬิกาปลุก
+// ============================================================================
+
+@Composable
+fun AlertsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
+    val c = AppTheme.colors
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val lib = remember { com.example.smartscheduler.settings.SoundLibrary(context) }
+    val notifyOn by viewModel.notifyOn.collectAsState()
+    val alarmOn by viewModel.alarmOn.collectAsState()
+    val notifySound by viewModel.notifySound.collectAsState()
+    val alarmSound by viewModel.alarmSound.collectAsState()
+    val vibrate by viewModel.vibrate.collectAsState()
+    val snooze by viewModel.snooze.collectAsState()
+    var picking by remember { mutableStateOf<Boolean?>(null) } // true = เสียงปลุก, false = เสียงแจ้งเตือน
+
+    // แสดงเต็มหน้าจอ (Android 14+ ต้องอนุญาตเอง) — เช็กใหม่ทุกครั้งที่กลับเข้าหน้านี้
+    var fullScreenOk by remember { mutableStateOf(canFullScreen(context)) }
+    val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycle) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) fullScreenOk = canFullScreen(context)
+        }
+        lifecycle.lifecycle.addObserver(obs)
+        onDispose { lifecycle.lifecycle.removeObserver(obs) }
+    }
+
+    LazyColumn(
+        Modifier.fillMaxSize().background(c.ground),
+        contentPadding = PaddingValues(start = 12.dp, end = 20.dp, top = 8.dp, bottom = 32.dp)
+    ) {
+        item { SubPageTop("แจ้งเตือนและนาฬิกาปลุก", onBack) }
+        item {
+            Column(Modifier.padding(start = 8.dp)) {
+                Panel(padding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
+                    SwitchRow(Icons.Filled.Notifications, "แจ้งเตือน", "เด้งตอนเริ่มกิจกรรม", notifyOn, viewModel::setNotifyOn)
+                    HorizontalDivider(color = c.line)
+                    SettingsRow(Icons.Filled.MusicNote, "เสียงแจ้งเตือน", lib.labelOf(notifySound)) { picking = false }
+                }
+                Spacer(Modifier.height(12.dp))
+                Panel(padding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
+                    SwitchRow(Icons.Filled.Alarm, "นาฬิกาปลุก", "ปิดชั่วคราวได้ เช่น วันหยุด (กิจกรรมที่ตั้งปลุกจะแจ้งเตือนธรรมดาแทน)", alarmOn, viewModel::setAlarmOn)
+                    HorizontalDivider(color = c.line)
+                    SettingsRow(Icons.Filled.MusicNote, "เสียงปลุก", lib.labelOf(alarmSound)) { picking = true }
+                    HorizontalDivider(color = c.line)
+                    SwitchRow(Icons.Filled.Vibration, "สั่นตอนปลุก", null, vibrate, viewModel::setVibrate)
+                    HorizontalDivider(color = c.line)
+                    Column(Modifier.padding(vertical = 12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.Snooze, contentDescription = null, tint = c.ink, modifier = Modifier.size(24.dp))
+                            Spacer(Modifier.width(16.dp))
+                            Text("เลื่อนปลุก", style = MaterialTheme.typography.titleMedium)
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        val options = listOf(5, 10, 15)
+                        SegmentedToggle(
+                            options = options.map { "$it นาที" },
+                            selectedIndex = options.indexOf(snooze).coerceAtLeast(0),
+                            onSelect = { viewModel.setSnooze(options[it]) }
+                        )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Panel(padding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
+                    SettingsRow(
+                        Icons.Filled.Fullscreen,
+                        "แสดงเต็มหน้าจอ",
+                        if (fullScreenOk) "อนุญาตแล้ว · ปลุกได้แม้ล็อกจออยู่" else "ยังไม่อนุญาต · แตะเพื่อเปิด (ไม่งั้นปลุกจะเป็นแค่แจ้งเตือน)"
+                    ) { openFullScreenSettings(context) }
+                }
+                Hint("ตั้งว่าจะเตือนหรือปลุกได้ที่แต่ละกิจกรรม (แตะกิจกรรม › เตือน)", Modifier.padding(top = 10.dp))
+            }
+        }
+    }
+
+    picking?.let { alarm ->
+        SoundPickerDialog(
+            alarm = alarm,
+            selected = if (alarm) alarmSound else notifySound,
+            onSelect = { key ->
+                if (key != null) { if (alarm) viewModel.setAlarmSound(key) else viewModel.setNotifySound(key) }
+                picking = null
+            },
+            onDismiss = { picking = null }
+        )
+    }
+}
+
+@Composable
+private fun SwitchRow(icon: ImageVector, title: String, subtitle: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
+    val c = AppTheme.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 60.dp)
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onChange)
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = c.ink, modifier = Modifier.size(24.dp))
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            subtitle?.let { Hint(it) }
+        }
+        Switch(checked = checked, onCheckedChange = null)
+    }
+}
+
+private fun canFullScreen(context: android.content.Context): Boolean =
+    if (android.os.Build.VERSION.SDK_INT >= 34) {
+        context.getSystemService(android.app.NotificationManager::class.java).canUseFullScreenIntent()
+    } else true
+
+private fun openFullScreenSettings(context: android.content.Context) {
+    val intent = if (android.os.Build.VERSION.SDK_INT >= 34) {
+        android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT)
+            .setData(android.net.Uri.parse("package:${context.packageName}"))
+    } else {
+        android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+    }
+    runCatching { context.startActivity(intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
 }
 
 // ============================================================================

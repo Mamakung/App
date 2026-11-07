@@ -144,6 +144,24 @@ interface ScheduleDao {
     )
     suspend fun setSeriesStyle(ownerUid: String, seriesId: String, kind: String, categoryId: Long?, color: String?, icon: String?)
 
+    // ---------- การเตือนทั้งชุด (แจ้งเตือน / ปลุก / เสียง) ----------
+
+    @Query(
+        """UPDATE schedule_tasks SET reminderEnabled = :reminder, alarm = :alarm, alarmSound = :sound
+           WHERE seriesId = :seriesId AND dayId IN (SELECT dayId FROM schedule_days WHERE ownerUid = :ownerUid)"""
+    )
+    suspend fun setSeriesAlert(ownerUid: String, seriesId: String, reminder: Boolean, alarm: Boolean, sound: String?)
+
+    @Query(
+        """UPDATE schedule_tasks SET reminderEnabled = :reminder, alarm = :alarm, alarmSound = :sound
+           WHERE importBatchId = :batchId AND title = :title
+             AND dayId IN (SELECT dayId FROM schedule_days WHERE ownerUid = :ownerUid)"""
+    )
+    suspend fun setImportedAlert(ownerUid: String, batchId: String, title: String, reminder: Boolean, alarm: Boolean, sound: String?)
+
+    @Query("UPDATE schedule_tasks SET reminderEnabled = :reminder, alarm = :alarm, alarmSound = :sound WHERE originTemplateTaskId = :templateTaskId")
+    suspend fun setTemplateCopiesAlert(templateTaskId: Long, reminder: Boolean, alarm: Boolean, sound: String?)
+
     @Query("DELETE FROM schedule_tasks WHERE taskId IN (:taskIds)")
     suspend fun deleteTasksByIds(taskIds: List<Long>)
 

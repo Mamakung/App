@@ -214,7 +214,7 @@ fun RoutineScreen(
                                 reminder = t.reminderEnabled,
                                 showDivider = i > 0,
                                 subtitle = "ทำซ้ำ $repeat",
-                                color = t.color, icon = t.icon, categoryId = t.categoryId,
+                                color = t.color, icon = t.icon, categoryId = t.categoryId, alarm = t.alarm,
                                 onClick = { editing = RoutineEdit(t, TaskKind.from(t.kind)) }
                             )
                         } else {
@@ -240,7 +240,7 @@ fun RoutineScreen(
                                         reminder = t.reminderEnabled,
                                         showDivider = false,
                                         subtitle = "ทำซ้ำ $repeat",
-                                        color = t.color, icon = t.icon, categoryId = t.categoryId,
+                                        color = t.color, icon = t.icon, categoryId = t.categoryId, alarm = t.alarm,
                                         onClick = null
                                     )
                                 }

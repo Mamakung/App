@@ -21,7 +21,7 @@ import com.example.smartscheduler.data.local.entity.*
         StockRecommendationEntity::class,
         CategoryEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -96,6 +96,16 @@ abstract class AppDatabase : RoomDatabase() {
                                 AND t2.startMinute = schedule_tasks.startMinute
                                 AND t2.durationMinutes = schedule_tasks.durationMinutes) > 1"""
                 )
+            }
+        }
+
+        /** v8: ปลุกเต็มจอต่อกิจกรรม + เสียงปลุกเฉพาะรายการ */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                for (table in listOf("schedule_tasks", "routine_template_tasks")) {
+                    db.execSQL("ALTER TABLE $table ADD COLUMN alarm INTEGER NOT NULL DEFAULT 0")
+                    db.execSQL("ALTER TABLE $table ADD COLUMN alarmSound TEXT")
+                }
             }
         }
 

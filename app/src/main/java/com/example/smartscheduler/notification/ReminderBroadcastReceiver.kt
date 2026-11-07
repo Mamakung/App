@@ -17,6 +17,39 @@ object NotificationChannels {
     const val WAKE_UP = "wake_up_channel"
     const val TASK_REMINDER = "task_reminder_channel"
     const val APP_UPDATE = "app_update_channel"
+    const val ALARM = "alarm_ring_channel"
+
+    /**
+     * ช่องแจ้งเตือนกิจกรรมตามเสียงที่เลือก (Android ล็อกเสียงไว้กับช่อง จึงสร้างช่องใหม่ต่อเสียง
+     * แล้วลบช่องเสียงเก่าทิ้ง) คืน id ช่องที่ใช้ได้ตอนนี้
+     */
+    fun taskChannel(context: Context): String {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return TASK_REMINDER
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val key = com.example.smartscheduler.settings.AppSettings.prefs(context)
+            .getString(com.example.smartscheduler.settings.AppSettings.KEY_NOTIFY_SOUND, null)
+            ?: com.example.smartscheduler.settings.AppSettings.DEFAULT_NOTIFY_SOUND
+        val id = "task_sound_" + Integer.toHexString(key.hashCode())
+        if (manager.getNotificationChannel(id) == null) {
+            val uri = com.example.smartscheduler.settings.SoundLibrary(context).uriOf(key)
+            manager.createNotificationChannel(
+                NotificationChannel(id, "เตือนกิจกรรม", NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "แจ้งเมื่อถึงเวลาเริ่มแต่ละกิจกรรม"
+                    if (uri != null) setSound(
+                        uri,
+                        android.media.AudioAttributes.Builder()
+                            .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
+                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build()
+                    )
+                }
+            )
+        }
+        manager.notificationChannels
+            .filter { (it.id.startsWith("task_sound_") && it.id != id) || it.id == TASK_REMINDER }
+            .forEach { manager.deleteNotificationChannel(it.id) }
+        return id
+    }
 
     fun registerAll(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -27,8 +60,10 @@ object NotificationChannels {
             }
         )
         manager.createNotificationChannel(
-            NotificationChannel(TASK_REMINDER, "เตือนช่วงทำงานและพัก", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                description = "แจ้งเมื่อถึงเวลาเริ่มแต่ละช่วงในตาราง"
+            NotificationChannel(ALARM, "นาฬิกาปลุก", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "ปลุกเต็มจอเมื่อถึงเวลากิจกรรมที่ตั้งปลุกไว้"
+                setSound(null, null) // เสียงเล่นจากเซอร์วิสปลุกเอง (วนจนกดหยุด)
+                enableVibration(false)
             }
         )
         manager.createNotificationChannel(
@@ -46,10 +81,12 @@ class ReminderBroadcastReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val title = intent.getStringExtra(EXTRA_TITLE) ?: "Reminder"
         val message = intent.getStringExtra(EXTRA_MESSAGE) ?: ""
-        val channel = intent.getStringExtra(EXTRA_CHANNEL) ?: NotificationChannels.TASK_REMINDER
+        val requested = intent.getStringExtra(EXTRA_CHANNEL) ?: NotificationChannels.TASK_REMINDER
         val notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, 0)
 
         NotificationChannels.registerAll(context)
+        // เตือนกิจกรรม: ใช้ช่องตามเสียงที่เลือกในตั้งค่า
+        val channel = if (requested == NotificationChannels.TASK_REMINDER) NotificationChannels.taskChannel(context) else requested
 
         val notification = NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_notification)

@@ -54,7 +54,9 @@ private fun RoutineTemplateTaskEntity.toScheduleTask(dayId: Long) = ScheduleTask
     originTemplateTaskId = templateTaskId,
     color = color,
     icon = icon,
-    categoryId = categoryId
+    categoryId = categoryId,
+    alarm = alarm,
+    alarmSound = alarmSound
 )
 
 @Singleton
@@ -139,6 +141,7 @@ class ScheduleRepository @Inject constructor(
         // วันที่ปรับเองแล้วไม่ถูกสร้างใหม่ตามกิจวัตร จึงเปลี่ยนสีให้ตรงด้วย
         if (task.templateTaskId != 0L) {
             scheduleDao.setTemplateCopiesStyle(task.templateTaskId, task.kind, task.categoryId, task.color, task.icon)
+            scheduleDao.setTemplateCopiesAlert(task.templateTaskId, task.reminderEnabled, task.alarm, task.alarmSound)
         }
         afterTemplateChange(uid, templateId)
     }
@@ -214,6 +217,20 @@ class ScheduleRepository @Inject constructor(
      *  - กิจวัตร: รายการกิจวัตร และทุกวันที่สร้างจากรายการนี้
      * [series] = รายการก่อนแก้ (ใช้ชื่อเดิมหาคาบอื่น)  [style] = ค่าใหม่
      */
+    /**
+     * เปลี่ยนการเตือน (ไม่เตือน / แจ้งเตือน / ปลุก + เสียง) ทั้งชุด แล้วตั้งเวลาเตือนใหม่
+     * ชุด = เพิ่มพร้อมกันหลายวัน / คาบเดียวกันในตารางนำเข้า / กิจวัตรเดียวกัน
+     */
+    suspend fun setSeriesAlert(uid: String, series: ScheduleTaskEntity, alert: ScheduleTaskEntity) {
+        series.seriesId?.let { scheduleDao.setSeriesAlert(uid, it, alert.reminderEnabled, alert.alarm, alert.alarmSound) }
+        series.importBatchId?.let { scheduleDao.setImportedAlert(uid, it, series.title, alert.reminderEnabled, alert.alarm, alert.alarmSound) }
+        series.originTemplateTaskId?.let { id ->
+            routineDao.setAlert(id, alert.reminderEnabled, alert.alarm, alert.alarmSound)
+            scheduleDao.setTemplateCopiesAlert(id, alert.reminderEnabled, alert.alarm, alert.alarmSound)
+        }
+        rescheduleUpcomingAlarms(uid)
+    }
+
     suspend fun setSeriesStyle(uid: String, series: ScheduleTaskEntity, style: ScheduleTaskEntity) {
         series.seriesId?.let {
             scheduleDao.setSeriesStyle(uid, it, style.kind, style.categoryId, style.color, style.icon)

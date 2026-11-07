@@ -74,7 +74,11 @@ data class TaskDraft(
     /** ไอคอนที่เลือก (ชื่อใน TaskIcons) null = ตามหมวด/ประเภท */
     val icon: String? = null,
     /** หมวดที่สร้างเอง null = ประเภทพื้นฐาน */
-    val categoryId: Long? = null
+    val categoryId: Long? = null,
+    /** ปลุกเต็มจอแทนแจ้งเตือน (ใช้คู่กับ reminder: ไม่เตือน = ทั้งสองเป็น false) */
+    val alarm: Boolean = false,
+    /** เสียงปลุกเฉพาะรายการนี้ null = ตามตั้งค่า */
+    val alarmSound: String? = null
 )
 
 /** ช่วงเวลาแบบย่อ ใช้วาดเส้นเวลา/แถบวัน */
@@ -102,9 +106,9 @@ val RoutineTemplateTaskEntity.startMin get() = startHour * 60 + startMinute
 val RoutineTemplateTaskEntity.endMin get() = startMin + durationMinutes
 
 fun ScheduleTaskEntity.toDraft() =
-    TaskDraft(title, TaskKind.from(kind), startMin, endMin, reminderEnabled, color = color, icon = icon, categoryId = categoryId)
+    TaskDraft(title, TaskKind.from(kind), startMin, endMin, reminderEnabled, color = color, icon = icon, categoryId = categoryId, alarm = alarm, alarmSound = alarmSound)
 fun RoutineTemplateTaskEntity.toDraft() =
-    TaskDraft(title, TaskKind.from(kind), startMin, endMin, reminderEnabled, color = color, icon = icon, categoryId = categoryId)
+    TaskDraft(title, TaskKind.from(kind), startMin, endMin, reminderEnabled, color = color, icon = icon, categoryId = categoryId, alarm = alarm, alarmSound = alarmSound)
 
 /** ฉบับสำหรับหน้ากิจวัตร: ใส่วันทำซ้ำจริงของรายการ (หรือค่าเริ่มต้นของกิจวัตร) */
 fun RoutineTemplateTaskEntity.toDraft(template: RoutineTemplateEntity) = toDraft().copy(
@@ -122,7 +126,9 @@ fun TaskDraft.toScheduleTask(base: ScheduleTaskEntity?, dayId: Long): ScheduleTa
         kind = kind.code,
         color = color,
         icon = icon,
-        categoryId = categoryId
+        categoryId = categoryId,
+        alarm = alarm,
+        alarmSound = alarmSound
     )
 
 fun TaskDraft.toTemplateTask(base: RoutineTemplateTaskEntity?, templateId: Long): RoutineTemplateTaskEntity =
@@ -136,6 +142,8 @@ fun TaskDraft.toTemplateTask(base: RoutineTemplateTaskEntity?, templateId: Long)
         color = color,
         icon = icon,
         categoryId = categoryId,
+        alarm = alarm,
+        alarmSound = alarmSound,
         repeatDays = repeatDays?.let { Recurrence.daysToCsv(it) } ?: base?.repeatDays,
         repeatMonths = repeatMonths?.let { Recurrence.monthsToCsv(it) } ?: base?.repeatMonths
     )
@@ -441,7 +449,9 @@ fun TimeRow(
     /** null = แถวนี้กดเองไม่ได้ (ให้ตัวที่ครอบอยู่จัดการ เช่นโหมดเลือกหลายรายการ) */
     onClick: (() -> Unit)?,
     /** ปุ่มท้ายแถว เช่น ถังขยะ */
-    trailing: (@Composable () -> Unit)? = null
+    trailing: (@Composable () -> Unit)? = null,
+    /** ตั้งปลุกไว้: โชว์ไอคอนนาฬิกาสีขาว */
+    alarm: Boolean = false
 ) {
     Column {
         if (showDivider) HorizontalDivider(color = AppTheme.colors.line)
@@ -463,9 +473,13 @@ fun TimeRow(
                     Icon(taskIcon(kind, icon, categoryId), contentDescription = taskLabel(kind, categoryId), tint = accent, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(6.dp))
                     Hint(subtitle ?: durationText(endMin - startMin))
+                    if (alarm) {
+                        Spacer(Modifier.width(6.dp))
+                        Icon(Icons.Filled.Alarm, contentDescription = "ตั้งปลุก", tint = AppTheme.colors.ink, modifier = Modifier.size(14.dp))
+                    }
                 }
             }
-            if (!reminder) {
+            if (!reminder && !alarm) {
                 Icon(
                     Icons.Filled.NotificationsOff, contentDescription = "ไม่แจ้งเตือน",
                     modifier = Modifier.size(16.dp), tint = AppTheme.colors.muted
@@ -677,12 +691,31 @@ fun TaskEditorDialog(
                         Checkbox(checked = done, onCheckedChange = null)
                     }
                 }
-                Row(
-                    Modifier.fillMaxWidth().toggleable(value = draft.reminder, role = Role.Switch, onValueChange = { draft = draft.copy(reminder = it) }).heightIn(min = 48.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("แจ้งเตือนตอนเริ่ม", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                    Switch(checked = draft.reminder, onCheckedChange = null)
+                // เตือนตอนเริ่ม: ไม่เตือน / แจ้งเตือน / ปลุก
+                Text("เตือน", style = MaterialTheme.typography.titleSmall)
+                AlertModeSelector(
+                    mode = when { draft.alarm -> 2; draft.reminder -> 1; else -> 0 },
+                    onSelect = { m -> draft = draft.copy(reminder = m >= 1, alarm = m == 2) }
+                )
+                if (draft.alarm) {
+                    var pickSound by remember { mutableStateOf(false) }
+                    val lib = remember { com.example.smartscheduler.settings.SoundLibrary(context) }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Alarm, contentDescription = null, tint = AppTheme.colors.ink, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Hint(
+                            "ปลุกเต็มจอ ${fmt(draft.startMin)} · เสียง" + (draft.alarmSound?.let { lib.labelOf(it) } ?: "ตามตั้งค่า"),
+                            Modifier.weight(1f)
+                        )
+                        TextButton(onClick = { pickSound = true }) { Text("เปลี่ยน") }
+                    }
+                    if (pickSound) {
+                        SoundPickerDialog(
+                            alarm = true, selected = draft.alarmSound, allowDefault = true,
+                            onSelect = { draft = draft.copy(alarmSound = it); pickSound = false },
+                            onDismiss = { pickSound = false }
+                        )
+                    }
                 }
                 draft.repeatDays?.let { days ->
                     Text("ทำซ้ำวัน", style = MaterialTheme.typography.titleSmall)
@@ -711,6 +744,43 @@ fun TaskEditorDialog(
             }
         }
     )
+}
+
+// ============================================================================
+// Alert mode (ไม่เตือน / แจ้งเตือน / ปลุก)
+// ============================================================================
+
+/** 3 ช่องมีไอคอน: 0 = ไม่เตือน, 1 = แจ้งเตือน, 2 = ปลุก */
+@Composable
+fun AlertModeSelector(mode: Int, onSelect: (Int) -> Unit) {
+    val c = AppTheme.colors
+    val items = listOf(
+        Triple(Icons.Filled.NotificationsOff, "ไม่เตือน", 0),
+        Triple(Icons.Filled.Notifications, "แจ้งเตือน", 1),
+        Triple(Icons.Filled.Alarm, "ปลุก", 2)
+    )
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.ground.copy(alpha = 0.6f)).padding(3.dp).selectableGroup()
+    ) {
+        items.forEach { (icon, label, m) ->
+            val on = m == mode
+            val bg by animateColorAsState(if (on) c.ink else Color.Transparent, tween(150), label = "alertBg")
+            Column(
+                Modifier
+                    .weight(1f)
+                    .heightIn(min = 52.dp)
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(bg)
+                    .selectable(selected = on, role = Role.RadioButton, onClick = { onSelect(m) })
+                    .padding(vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(icon, contentDescription = null, tint = if (on) c.ground else c.muted, modifier = Modifier.size(20.dp))
+                Text(label, style = MaterialTheme.typography.labelMedium, color = if (on) c.ground else c.muted)
+            }
+        }
+    }
 }
 
 // ============================================================================

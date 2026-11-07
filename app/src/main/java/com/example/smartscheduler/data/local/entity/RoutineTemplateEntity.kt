@@ -64,5 +64,9 @@ data class RoutineTemplateTaskEntity(
     /** ไอคอนที่เลือก (ชื่อใน TaskIcons) null = ตามหมวด/ประเภท */
     val icon: String? = null,
     /** หมวดหมู่ที่ผู้ใช้สร้าง null = ใช้ประเภทพื้นฐาน */
-    val categoryId: Long? = null
+    val categoryId: Long? = null,
+    /** true = ปลุกเต็มจอ (ดังวนจนกดหยุด) แทนแจ้งเตือนธรรมดา */
+    @androidx.room.ColumnInfo(defaultValue = "0") val alarm: Boolean = false,
+    /** เสียงปลุกเฉพาะรายการนี้ (null = ใช้เสียงปลุกในตั้งค่า) */
+    val alarmSound: String? = null
 )

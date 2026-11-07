@@ -40,8 +40,11 @@ class AlarmScheduler @Inject constructor(
         tasks: List<ScheduleTaskEntity>
     ) {
         cancelForDay(dayId, maxOf(tasks.size, 40))
+        val prefs = com.example.smartscheduler.settings.AppSettings.prefs(context)
+        val notifyOn = prefs.getBoolean(com.example.smartscheduler.settings.AppSettings.KEY_NOTIFY_ON, true)
+        val alarmOn = prefs.getBoolean(com.example.smartscheduler.settings.AppSettings.KEY_ALARM_ON, true)
 
-        scheduleAt(
+        if (notifyOn) scheduleAt(
             requestCode = wakeUpRequestCode(dayId),
             triggerAt = date.atTime(wakeUpHour, wakeUpMinute),
             title = "ตื่นได้แล้ว!",
@@ -50,7 +53,16 @@ class AlarmScheduler @Inject constructor(
         )
 
         tasks.forEachIndexed { index, task ->
-            if (!task.reminderEnabled) return@forEachIndexed
+            // ปลุกเต็มจอ (ถ้าเปิดนาฬิกาปลุกไว้) — ถ้าปิดนาฬิกาปลุกทั้งหมด ปลุกจะกลายเป็นแจ้งเตือนธรรมดา
+            if (task.alarm && alarmOn) {
+                scheduleAlarm(
+                    requestCode = taskRequestCode(dayId, index),
+                    triggerAt = date.atTime(task.startHour, task.startMinute),
+                    info = AlarmInfo.of(task, date)
+                )
+                return@forEachIndexed
+            }
+            if (!(task.reminderEnabled || task.alarm) || !notifyOn) return@forEachIndexed
             scheduleAt(
                 requestCode = taskRequestCode(dayId, index),
                 triggerAt = date.atTime(task.startHour, task.startMinute),
@@ -92,9 +104,42 @@ class AlarmScheduler @Inject constructor(
         }
     }
 
+    /** ปลุกด้วย setAlarmClock: แม่นที่สุด ระบบโชว์ไอคอนนาฬิกาปลุกที่แถบสถานะ */
+    fun scheduleAlarm(requestCode: Int, triggerAt: LocalDateTime, info: AlarmInfo) {
+        val triggerAtMillis = triggerAt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        if (triggerAtMillis <= System.currentTimeMillis()) return
+        scheduleAlarmAtMillis(requestCode, triggerAtMillis, info)
+    }
+
+    fun scheduleAlarmAtMillis(requestCode: Int, triggerAtMillis: Long, info: AlarmInfo) {
+        val intent = Intent(context, AlarmReceiver::class.java).apply { info.putInto(this); putExtra(AlarmInfo.EXTRA_ID, requestCode) }
+        val pi = PendingIntent.getBroadcast(context, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val show = PendingIntent.getActivity(
+            context, requestCode,
+            Intent(context, com.example.smartscheduler.MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        if (canScheduleExactAlarms()) {
+            alarmManager.setAlarmClock(AlarmManager.AlarmClockInfo(triggerAtMillis, show), pi)
+        } else {
+            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi)
+        }
+    }
+
     fun cancelForDay(dayId: Long, previousTaskCount: Int) {
         cancel(wakeUpRequestCode(dayId))
-        for (i in 0 until previousTaskCount) cancel(taskRequestCode(dayId, i))
+        for (i in 0 until previousTaskCount) {
+            cancel(taskRequestCode(dayId, i))
+            cancelAlarm(taskRequestCode(dayId, i))
+        }
+    }
+
+    private fun cancelAlarm(requestCode: Int) {
+        val pi = PendingIntent.getBroadcast(
+            context, requestCode, Intent(context, AlarmReceiver::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        alarmManager.cancel(pi)
     }
 
     private fun cancel(requestCode: Int) {

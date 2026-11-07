@@ -67,8 +67,48 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
         _motion.value = motion
     }
 
+    // ---------- แจ้งเตือนและนาฬิกาปลุก ----------
+    private fun flowOf(key: String, def: Boolean) = MutableStateFlow(prefs.getBoolean(key, def))
+    private fun flowOf(key: String, def: String) = MutableStateFlow(prefs.getString(key, null) ?: def)
+
+    private val _notifyOn = flowOf(KEY_NOTIFY_ON, true)
+    val notifyOn: StateFlow<Boolean> = _notifyOn.asStateFlow()
+    fun setNotifyOn(v: Boolean) { prefs.edit().putBoolean(KEY_NOTIFY_ON, v).apply(); _notifyOn.value = v }
+
+    private val _alarmOn = flowOf(KEY_ALARM_ON, true)
+    val alarmOn: StateFlow<Boolean> = _alarmOn.asStateFlow()
+    fun setAlarmOn(v: Boolean) { prefs.edit().putBoolean(KEY_ALARM_ON, v).apply(); _alarmOn.value = v }
+
+    private val _notifySound = flowOf(KEY_NOTIFY_SOUND, DEFAULT_NOTIFY_SOUND)
+    val notifySound: StateFlow<String> = _notifySound.asStateFlow()
+    fun setNotifySound(v: String) { prefs.edit().putString(KEY_NOTIFY_SOUND, v).apply(); _notifySound.value = v }
+
+    private val _alarmSound = flowOf(KEY_ALARM_SOUND, DEFAULT_ALARM_SOUND)
+    val alarmSound: StateFlow<String> = _alarmSound.asStateFlow()
+    fun setAlarmSound(v: String) { prefs.edit().putString(KEY_ALARM_SOUND, v).apply(); _alarmSound.value = v }
+
+    private val _vibrate = flowOf(KEY_VIBRATE, true)
+    val vibrate: StateFlow<Boolean> = _vibrate.asStateFlow()
+    fun setVibrate(v: Boolean) { prefs.edit().putBoolean(KEY_VIBRATE, v).apply(); _vibrate.value = v }
+
+    private val _snooze = MutableStateFlow(prefs.getInt(KEY_SNOOZE, 5))
+    val snooze: StateFlow<Int> = _snooze.asStateFlow()
+    fun setSnooze(v: Int) { prefs.edit().putInt(KEY_SNOOZE, v).apply(); _snooze.value = v }
+
     companion object {
         const val DRAG_WHITE = "white"
+        const val DEFAULT_NOTIFY_SOUND = "app:snd_n1_sai"
+        const val DEFAULT_ALARM_SOUND = "app:snd_a1_morning"
+        const val PREFS = "settings"
+        const val KEY_NOTIFY_ON = "notify_on"
+        const val KEY_ALARM_ON = "alarm_on"
+        const val KEY_NOTIFY_SOUND = "notify_sound"
+        const val KEY_ALARM_SOUND = "alarm_sound"
+        const val KEY_VIBRATE = "alarm_vibrate"
+        const val KEY_SNOOZE = "alarm_snooze"
+
+        /** อ่านค่าจากที่ที่ไม่มี Hilt (ตัวรับเวลาเตือน, เซอร์วิสปลุก) */
+        fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         private const val KEY_FAB = "fab_style"
         private const val KEY_DRAG = "drag_color"
         private const val KEY_MOTION = "motion"

@@ -52,6 +52,7 @@ object Routes {
     const val SETTINGS = "settings"
     const val SETTINGS_APPEARANCE = "settings/appearance"
     const val SETTINGS_CATEGORIES = "settings/categories"
+    const val SETTINGS_ALERTS = "settings/alerts"
 }
 
 private data class TabItem(val route: String, val label: String, val icon: ImageVector)
@@ -168,11 +169,15 @@ fun AppNavGraph(startDestination: String = Routes.AUTH, openUpdateOnStart: Boole
             composable(Routes.SETTINGS) {
                 SettingsScreen(
                     onOpenAppearance = { navController.navigate(Routes.SETTINGS_APPEARANCE) },
+                    onOpenAlerts = { navController.navigate(Routes.SETTINGS_ALERTS) },
                     onOpenCategories = { navController.navigate(Routes.SETTINGS_CATEGORIES) }
                 )
             }
             composable(Routes.SETTINGS_APPEARANCE) {
                 com.example.smartscheduler.ui.screens.settings.AppearanceScreen(onBack = { navController.popBackStack() })
+            }
+            composable(Routes.SETTINGS_ALERTS) {
+                com.example.smartscheduler.ui.screens.settings.AlertsScreen(onBack = { navController.popBackStack() })
             }
             composable(Routes.SETTINGS_CATEGORIES) {
                 com.example.smartscheduler.ui.screens.settings.CategoriesScreen(onBack = { navController.popBackStack() })

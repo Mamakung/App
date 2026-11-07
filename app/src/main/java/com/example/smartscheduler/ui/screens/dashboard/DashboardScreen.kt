@@ -212,6 +212,10 @@ class DashboardViewModel @Inject constructor(
                 val styleChanged = updated.color != existing.color || updated.icon != existing.icon ||
                     updated.categoryId != existing.categoryId || updated.kind != existing.kind
                 if (existing.isRepeating && styleChanged) repo.setSeriesStyle(uid, existing, updated)
+                // เปลี่ยนการเตือน (ไม่เตือน/แจ้งเตือน/ปลุก/เสียง) ของรายการที่ซ้ำ = เปลี่ยนทั้งชุด
+                val alertChanged = updated.reminderEnabled != existing.reminderEnabled ||
+                    updated.alarm != existing.alarm || updated.alarmSound != existing.alarmSound
+                if (existing.isRepeating && alertChanged) repo.setSeriesAlert(uid, existing, updated)
             }
         }
     }
@@ -389,7 +393,7 @@ fun DashboardScreen(
             title = if (edit.task == null) "เพิ่มกิจกรรม ${shortDay(edit.date)}" else "แก้ไขกิจกรรม",
             initial = edit.task?.toDraft() ?: defaultDraft(TaskKind.TASK, start = ((nowMin / 60) + 1) * 60 % (24 * 60)),
             footnote = "เวลาและชื่อมีผลเฉพาะวันที่ ${shortDay(edit.date)}" +
-                if (edit.task?.isRepeating == true) " ส่วนหมวด สี และไอคอนเปลี่ยนให้ทุกวันของรายการนี้" else "",
+                if (edit.task?.isRepeating == true) " ส่วนหมวด สี ไอคอน และการเตือนเปลี่ยนให้ทุกวันของรายการนี้" else "",
             onSave = { viewModel.save(edit.date, edit.task, it); editing = null },
             onDelete = edit.task?.let { t ->
                 {
@@ -987,7 +991,7 @@ private fun DayAgenda(
             tasks.forEachIndexed { i, t ->
                 TimeRow(
                     title = t.title, kind = TaskKind.from(t.kind), startMin = t.startMin, endMin = t.endMin,
-                    reminder = t.reminderEnabled, showDivider = i > 0, subtitle = t.description, color = t.color, icon = t.icon, categoryId = t.categoryId,
+                    reminder = t.reminderEnabled, showDivider = i > 0, subtitle = t.description, color = t.color, icon = t.icon, categoryId = t.categoryId, alarm = t.alarm,
                     onClick = { onOpenTask(t) }
                 )
             }
@@ -1049,7 +1053,7 @@ private fun WeekAgenda(
                 tasks.forEachIndexed { j, t ->
                     TimeRow(
                         title = t.title, kind = TaskKind.from(t.kind), startMin = t.startMin, endMin = t.endMin,
-                        reminder = t.reminderEnabled, showDivider = j > 0, subtitle = t.description, color = t.color, icon = t.icon, categoryId = t.categoryId,
+                        reminder = t.reminderEnabled, showDivider = j > 0, subtitle = t.description, color = t.color, icon = t.icon, categoryId = t.categoryId, alarm = t.alarm,
                         onClick = { onOpenTask(t, d) }
                     )
                 }
