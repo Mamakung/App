@@ -644,8 +644,14 @@ fun TaskEditorDialog(
                 CategoryChips(kind = draft.kind, categoryId = draft.categoryId) { k, cat ->
                     var d = draft.copy(kind = k, categoryId = cat)
                     var filled = false
-                    val name = cat?.let { categoryMap[it]?.name }
-                    if (name != null && (draft.title.isBlank() || draft.title == autoTitle)) {
+                    // ชื่อตามปุ่มหมวด (หมวดของแอปด้วย) เติมทับได้เฉพาะชื่อว่าง/ชื่อที่เป็นชื่อหมวดอยู่แล้ว
+                    val name = cat?.let { categoryMap[it]?.name } ?: k.label
+                    val t = draft.title.trim()
+                    val autoLike = t.isEmpty() || t == autoTitle ||
+                        TaskKind.values().any { it.label == t } ||
+                        categoryMap.values.any { it.name == t } ||
+                        t == "ช่วงทำงาน" || t == "พักเบรก"
+                    if (autoLike && t != name) {
                         d = d.copy(title = name); autoTitle = name; filled = true
                     }
                     if (isNew) {

@@ -57,6 +57,9 @@
 
         <!-- นาฬิกาปลุก -->
         <receiver
+            android:name=".update.UpdateActionReceiver"
+            android:exported="false" />
+        <receiver
             android:name=".notification.AlarmReceiver"
             android:exported="false" />
         <service

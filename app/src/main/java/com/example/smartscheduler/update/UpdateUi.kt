@@ -78,7 +78,15 @@ class UpdateViewModel @Inject constructor(
                 result.fold(
                     onSuccess = { update ->
                         when {
-                            update != null -> s.copy(step = UpdateStep.Available(update), dialogVisible = true)
+                            update != null -> {
+                                val file = repo.downloadedFile(update)
+                                val step = when {
+                                    file == null -> UpdateStep.Available(update)
+                                    repo.canInstall() -> UpdateStep.ReadyToInstall(update, file)
+                                    else -> UpdateStep.NeedsPermission(update, file)
+                                }
+                                s.copy(step = step, dialogVisible = true)
+                            }
                             showWhenNothing -> s.copy(step = UpdateStep.UpToDate)
                             else -> s
                         }
@@ -190,7 +198,7 @@ fun UpdateHost(viewModel: UpdateViewModel, openedFromNotification: Boolean) {
                                 modifier = Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())
                             )
                         }
-                        Hint("ข้อมูลตารางและหุ้นที่ติดตามยังอยู่ครบหลังอัปเดต")
+                        Hint("ข้อมูลตารางและกิจกรรมยังอยู่ครบหลังอัปเดต")
                     }
                     is UpdateStep.Downloading -> {
                         LinearProgressIndicator(

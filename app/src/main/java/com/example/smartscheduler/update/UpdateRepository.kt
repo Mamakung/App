@@ -74,6 +74,7 @@ class UpdateRepository @Inject constructor(
     val currentVersionCode: Int get() = BuildConfig.VERSION_CODE
     val currentVersionName: String get() = BuildConfig.VERSION_NAME
 
+    private val prefs get() = context.getSharedPreferences("updates", Context.MODE_PRIVATE)
     private val apkFile: File get() = File(File(context.cacheDir, "updates").apply { mkdirs() }, "update.apk")
 
     /** คืนค่าเวอร์ชันใหม่ถ้ามี, null ถ้าเป็นเวอร์ชันล่าสุดแล้ว; โยน exception ถ้าเชื่อมต่อไม่ได้ */
@@ -124,8 +125,13 @@ class UpdateRepository @Inject constructor(
         }
         if (target.exists()) target.delete()
         partial.renameTo(target)
+        prefs.edit().putInt(KEY_DOWNLOADED, update.versionCode).apply()
         target
     }
+
+    /** ไฟล์ของเวอร์ชันนี้ที่โหลดไว้แล้ว (เช่น โหลดจากปุ่มในแจ้งเตือน) ไม่ต้องโหลดซ้ำ */
+    fun downloadedFile(update: AppUpdate): File? =
+        apkFile.takeIf { it.exists() && prefs.getInt(KEY_DOWNLOADED, 0) == update.versionCode }
 
     /** Android 8+ ต้องให้ผู้ใช้อนุญาต "ติดตั้งแอปที่ไม่รู้จัก" สำหรับแอปนี้ก่อน */
     fun canInstall(): Boolean =
@@ -144,6 +150,7 @@ class UpdateRepository @Inject constructor(
     }
 
     companion object {
+        private const val KEY_DOWNLOADED = "downloaded_version"
         /** เลขท้าย tag คือ versionCode: "build-445210" → 445210, "v1.0.42" → 42 */
         fun versionCodeFromTag(tag: String): Int? = tag.takeLastWhile { it.isDigit() }.toIntOrNull()
     }
