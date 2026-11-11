@@ -13,12 +13,18 @@ import javax.inject.Inject
 class SmartSchedulerApp : Application(), Configuration.Provider {
 
     @Inject lateinit var workerFactory: HiltWorkerFactory
+    @Inject lateinit var scheduleDao: com.example.smartscheduler.data.local.dao.ScheduleDao
+    @Inject lateinit var categoryDao: com.example.smartscheduler.data.local.dao.CategoryDao
+    @Inject lateinit var currentUser: com.example.smartscheduler.data.session.CurrentUser
 
     override fun onCreate() {
         super.onCreate()
         NotificationChannels.registerAll(this)
         scheduleDailyRefreshWorker()
         com.example.smartscheduler.update.UpdateCheckWorker.schedule(this)
+        // วิดเจ็ต "วันนี้": วาดใหม่เมื่อเปิดแอป และทุกครั้งที่กิจกรรมวันนี้เปลี่ยน
+        com.example.smartscheduler.widget.TodayWidget.refresh(this)
+        com.example.smartscheduler.widget.TodayWidget.watch(this, scheduleDao, categoryDao) { currentUser.uid }
     }
 
     override val workManagerConfiguration: Configuration
