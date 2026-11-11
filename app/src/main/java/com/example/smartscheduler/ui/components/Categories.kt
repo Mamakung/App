@@ -331,7 +331,6 @@ fun CategoryDialog(
                     onSelect = { kind = kinds[it] }
                 )
                 Hint("ใช้นับเวลาทำงาน/พักในหน้าภาพรวม")
-                Text("สี", style = MaterialTheme.typography.titleSmall)
                 ColorPicker(kind = kind, selected = color, onSelect = { color = it })
                 Text("ไอคอน", style = MaterialTheme.typography.titleSmall)
                 IconPicker(kind = kind, categoryId = null, selected = icon, accent = accent, onSelect = { icon = it })

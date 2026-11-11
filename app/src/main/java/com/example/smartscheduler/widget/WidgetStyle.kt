@@ -70,17 +70,16 @@ data class WidgetStyle(
         }
     }
 
+    /** เลือกเอง: ใช้สีตรงตามที่เห็นในตัวเลือกสี ตัวหนังสือขาว/ดำตามพื้น */
     private fun custom(dark: Boolean): WidgetPalette {
-        val bgPair = TaskPalette.resolve(bgKey, dark)
-        val bg = bgPair?.second?.toArgb() ?: DARK_PAL.bg
-        val head = bgPair?.first?.toArgb() ?: DARK_PAL.head
-        val today = TaskPalette.resolve(todayKey, dark)?.first?.toArgb() ?: head
+        val bg = TaskPalette.resolve(bgKey, dark)?.first?.toArgb() ?: DARK_PAL.bg
+        val today = TaskPalette.resolve(todayKey, dark)?.first?.toArgb() ?: DARK_PAL.today
         val bgDark = ColorUtils.calculateLuminance(bg) < 0.4
         val ink = if (bgDark) 0xFFE6EEEA.toInt() else 0xFF18302C.toInt()
         return WidgetPalette(
             bg = bg, ink = ink,
             muted = ColorUtils.blendARGB(ink, bg, 0.4f),
-            head = head, today = today, onToday = readableOn(today), dark = bgDark
+            head = ink, today = today, onToday = readableOn(today), dark = bgDark
         )
     }
 

@@ -30,9 +30,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.example.smartscheduler.ui.components.HueBar
+import com.example.smartscheduler.ui.components.ColorField
 import com.example.smartscheduler.ui.components.Hint
-import com.example.smartscheduler.ui.components.StrengthSlider
 import com.example.smartscheduler.ui.theme.AppTheme
 import com.example.smartscheduler.ui.theme.SmartSchedulerTheme
 import com.example.smartscheduler.ui.theme.TaskPalette
@@ -106,7 +105,6 @@ private fun ConfigScreen(
     val c = AppTheme.colors
     var style by remember { mutableStateOf(initial) }
     var bmp by remember { mutableStateOf<Bitmap?>(null) }
-    var open by remember { mutableStateOf<Int?>(if (initial.preset == WidgetPreset.CUSTOM) 1 else null) }
     LaunchedEffect(style) { bmp = preview(style) }
 
     Surface(color = c.ground, modifier = Modifier.fillMaxSize()) {
@@ -147,7 +145,6 @@ private fun ConfigScreen(
                 WidgetPreset.values().forEach { pr ->
                     PresetCard(pr, selected = style.preset == pr, modifier = Modifier.weight(1f)) {
                         style = style.copy(preset = pr)
-                        if (pr == WidgetPreset.CUSTOM && open == null) open = 1
                     }
                 }
                 if (WidgetPreset.values().size % 2 == 1) Spacer(Modifier.weight(1f))
@@ -155,10 +152,18 @@ private fun ConfigScreen(
 
             if (style.preset == WidgetPreset.CUSTOM) {
                 Text("เลือกเอง", style = MaterialTheme.typography.titleSmall, color = c.muted, modifier = Modifier.padding(top = 18.dp, bottom = 4.dp))
-                ColorRow("สีวิดเจ็ต", "พื้นและหัว", style.bgKey, open == 1) { open = if (open == 1) null else 1 }
-                if (open == 1) WidgetColorPicker(style.bgKey) { style = style.copy(bgKey = it) }
-                ColorRow("สีช่องวันนี้", if (isMonth) "ช่องที่บอกว่าวันนี้" else "แถบบนปฏิทิน", style.todayKey, open == 2) { open = if (open == 2) null else 2 }
-                if (open == 2) WidgetColorPicker(style.todayKey) { style = style.copy(todayKey = it) }
+                ColorField(
+                    title = "สีวิดเจ็ต",
+                    selected = style.bgKey,
+                    defaultColor = Color(WidgetStyle.DARK_PAL.bg),
+                    onSelect = { k -> k?.let { style = style.copy(bgKey = it) } }
+                )
+                ColorField(
+                    title = "สีช่องวันนี้",
+                    selected = style.todayKey,
+                    defaultColor = Color(WidgetStyle.DARK_PAL.today),
+                    onSelect = { k -> k?.let { style = style.copy(todayKey = it) } }
+                )
             } else {
                 Hint(
                     when (style.preset) {
@@ -219,77 +224,4 @@ private fun PresetSwatch(pr: WidgetPreset) {
 @Composable
 private fun BoxScope.Dot(color: Color) {
     Box(Modifier.align(Alignment.BottomEnd).padding(4.dp).size(11.dp).clip(RoundedCornerShape(3.dp)).background(color))
-}
-
-@Composable
-private fun ColorRow(title: String, detail: String, key: String, expanded: Boolean, onClick: () -> Unit) {
-    val c = AppTheme.colors
-    val color = TaskPalette.resolve(key, c.dark)?.first ?: c.ink
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp)
-            .clickable(role = Role.Button, onClick = onClick)
-            .semantics { contentDescription = "$title เปลี่ยนสี" },
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(Modifier.size(28.dp).clip(CircleShape).background(color))
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(detail, style = MaterialTheme.typography.labelSmall, color = c.muted)
-        }
-        Icon(if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = null, tint = c.muted)
-    }
-}
-
-/** วงสี 11 สี + แถบสี + ความเข้ม (เหมือนตอนเลือกสีกิจกรรม) */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun WidgetColorPicker(selected: String, onSelect: (String) -> Unit) {
-    val c = AppTheme.colors
-    val dark = c.dark
-    val base = TaskPalette.baseOf(selected)
-    val strength = TaskPalette.strengthOf(selected)
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(c.surface)
-            .padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        FlowRow(
-            Modifier.fillMaxWidth().selectableGroup(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            TaskPalette.swatches.forEach { sw ->
-                val isSel = sw.key == base
-                val color = TaskPalette.resolve(TaskPalette.withStrength(sw.key, strength), dark)!!.first
-                Box(
-                    Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .border(2.dp, if (isSel) c.ink else Color.Transparent, CircleShape)
-                        .selectable(selected = isSel, role = Role.RadioButton) {
-                            onSelect(TaskPalette.withStrength(sw.key, strength) ?: sw.key)
-                        }
-                        .semantics { contentDescription = "สี${sw.label}" },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Box(Modifier.size(32.dp).clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
-                        if (isSel) Icon(Icons.Filled.Check, contentDescription = null, tint = c.surface, modifier = Modifier.size(18.dp))
-                    }
-                }
-            }
-        }
-        Hint("หรือลากเลือกสีเองจากแถบ")
-        HueBar(hue = TaskPalette.hueOf(selected), strength = strength, dark = dark) {
-            onSelect(TaskPalette.withStrength(TaskPalette.hueKey(it), strength) ?: TaskPalette.hueKey(it))
-        }
-        StrengthSlider(base = base, strength = strength, dark = dark) {
-            onSelect(TaskPalette.withStrength(base, it) ?: selected)
-        }
-    }
 }

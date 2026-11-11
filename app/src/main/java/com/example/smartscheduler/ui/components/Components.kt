@@ -676,7 +676,6 @@ fun TaskEditorDialog(
                     }
                     TimeButton("สิ้นสุด", draft.endMin, Modifier.weight(1f)) { e -> draft = draft.copy(endMin = e) }
                 }
-                Text("สี", style = MaterialTheme.typography.titleSmall)
                 ColorPicker(kind = draft.kind, selected = draft.color, categoryId = draft.categoryId) { draft = draft.copy(color = it) }
                 Text("ไอคอน", style = MaterialTheme.typography.titleSmall)
                 IconPicker(
@@ -800,68 +799,14 @@ fun AlertModeSelector(mode: Int, onSelect: (Int) -> Unit) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ColorPicker(kind: TaskKind, selected: String?, categoryId: Long? = null, onSelect: (String?) -> Unit) {
-    val c = AppTheme.colors
-    val dark = c.dark
-    val baseAccent = taskAccent(kind, null, categoryId)
-    val baseIcon = taskIcon(kind, null, categoryId)
-    val base = TaskPalette.baseOf(selected)
-    val strength = TaskPalette.strengthOf(selected)
-    // วงสีแสดงตามความเข้มที่ตั้งอยู่ จะได้เห็นสีจริงก่อนเลือก
-    val items: List<Triple<String?, String, Color>> =
-        listOf(Triple(null, "ตาม${taskLabel(kind, categoryId)}", baseAccent)) +
-            TaskPalette.swatches.map {
-                Triple(it.key, it.label, TaskPalette.resolve(TaskPalette.withStrength(it.key, strength), dark)!!.first)
-            }
-    FlowRow(
-        Modifier.fillMaxWidth().selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        items.forEach { (key, label, color) ->
-            val isSel = key == base
-            // ตัวที่เลือก: มีกรอบรอบนอก (ไม่เปลี่ยนสีพื้น) + เครื่องหมายถูกบนวงสี
-            Box(
-                Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .border(2.dp, if (isSel) c.ink else Color.Transparent, CircleShape)
-                    .selectable(
-                        selected = isSel, role = Role.RadioButton,
-                        onClick = { onSelect(TaskPalette.withStrength(key, strength)) }
-                    )
-                    .semantics { contentDescription = "สี$label" },
-                contentAlignment = Alignment.Center
-            ) {
-                Box(
-                    Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .then(
-                            if (key == null) Modifier.border(2.dp, color, CircleShape)
-                            else Modifier.background(color)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    when {
-                        key == null -> Icon(baseIcon, contentDescription = null, tint = color, modifier = Modifier.size(18.dp))
-                        isSel -> Icon(Icons.Filled.Check, contentDescription = null, tint = c.surface, modifier = Modifier.size(20.dp))
-                    }
-                }
-            }
-        }
-    }
-    Hint("หรือลากเลือกสีเองจากแถบ")
-    HueBar(
-        hue = TaskPalette.hueOf(selected),
-        strength = strength,
-        dark = dark,
-        onChange = { onSelect(TaskPalette.withStrength(TaskPalette.hueKey(it), strength)) }
-    )
-    StrengthSlider(
-        base = base,
-        strength = strength,
-        dark = dark,
-        onChange = { onSelect(TaskPalette.withStrength(base, it)) }
+    // แถวสีแบบย่อ แตะแล้วเปิดแผ่น "เลือกสี" (รหัสสี + วงสำเร็จรูป + กล่องลากเลือก + แถบโทนสี)
+    ColorField(
+        title = "สี",
+        selected = selected,
+        defaultColor = taskAccent(kind, null, categoryId),
+        defaultLabel = "ตาม${taskLabel(kind, categoryId)}",
+        icon = taskIcon(kind, null, categoryId),
+        onSelect = onSelect
     )
 }
 

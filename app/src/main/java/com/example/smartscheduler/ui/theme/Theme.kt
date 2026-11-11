@@ -133,6 +133,26 @@ object TaskPalette {
     fun hueOf(key: String?): Int? =
         baseOf(key)?.takeIf { it.startsWith("h") }?.drop(1)?.toIntOrNull()?.coerceIn(0, 359)
 
+    // ---------- สีที่เลือกจากตัวเลือกสี เก็บเป็นรหัส "#RRGGBB" ใช้ตรงตามนั้นทั้งโหมดมืด/สว่าง ----------
+
+    fun hexKey(argb: Int): String = "#%06X".format(argb and 0xFFFFFF)
+
+    /** ARGB ของรหัส "#RRGGBB" หรือ null ถ้าไม่ใช่รหัส */
+    fun hexOf(key: String?): Int? {
+        val k = key?.trim() ?: return null
+        if (!k.startsWith("#") || k.length != 7) return null
+        return k.drop(1).toLongOrNull(16)?.let { (0xFF000000L or it).toInt() }
+    }
+
+    /** สีจริงที่แสดงของรหัสใดๆ (ใช้เปิดตัวเลือกสีด้วยสีเดิม) */
+    fun displayArgb(key: String?, dark: Boolean): Int? = resolve(key, dark)?.first?.let {
+        android.graphics.Color.argb((it.alpha * 255).toInt(), (it.red * 255).toInt(), (it.green * 255).toInt(), (it.blue * 255).toInt())
+    }
+
+    /** พื้นอ่อนของบล็อกกิจกรรม คำนวณจากสีที่เลือก */
+    private fun hexFill(argb: Int, dark: Boolean): Color =
+        if (dark) Color(ColorUtils.blendARGB(argb, darkSurface, 0.78f)) else Color(ColorUtils.blendARGB(argb, white, 0.86f))
+
     private val white = android.graphics.Color.WHITE
     private val darkSurface = 0xFF19231F.toInt()
 
@@ -143,6 +163,7 @@ object TaskPalette {
      * ปรับตามความเข้มที่เลือก แล้วตรวจให้สีหลักยังตัดกับพื้น ≥ 3:1 (ไอคอน/เส้นมองเห็นชัด)
      */
     fun resolve(key: String?, dark: Boolean): Pair<Color, Color>? {
+        hexOf(key)?.let { argb -> return Color(argb) to hexFill(argb, dark) }
         val base = baseOf(key) ?: return null
         if (find(base) == null && hueOf(base) == null) return null
         val strength = strengthOf(key)

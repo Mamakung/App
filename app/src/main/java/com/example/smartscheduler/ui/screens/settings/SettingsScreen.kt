@@ -83,6 +83,7 @@ class SettingsViewModel @Inject constructor(
 private fun dragColorLabel(key: String): String = when {
     key == AppSettings.DRAG_WHITE -> "ขาว"
     TaskPalette.find(key) != null -> TaskPalette.find(key)!!.label
+    TaskPalette.hexOf(key) != null -> key.uppercase()
     else -> "สีจากแถบ"
 }
 
@@ -211,30 +212,13 @@ fun AppearanceScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltView
                 Panel {
                     Text("สีตอนลากเลือกวัน", style = MaterialTheme.typography.titleSmall)
                     Hint("กดค้างที่วันในปฏิทินแล้วลาก")
-                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("สี", style = MaterialTheme.typography.bodyMedium, color = c.muted, modifier = Modifier.weight(1f))
-                        FilterChip(
-                            selected = isWhite,
-                            onClick = { viewModel.setDragColor(AppSettings.DRAG_WHITE) },
-                            label = { Text("ใช้สีขาว") },
-                            leadingIcon = {
-                                Box(Modifier.size(16.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFFE6EEEA)))
-                            },
-                            modifier = Modifier.heightIn(min = 48.dp)
-                        )
-                    }
-                    // แถบสีรุ้ง + ความเข้ม แบบเดียวกับตอนเลือกสีไอคอน
-                    HueBar(
-                        hue = TaskPalette.hueOf(base),
-                        strength = strength,
-                        dark = c.dark,
-                        onChange = { h -> viewModel.setDragColor(TaskPalette.withStrength(TaskPalette.hueKey(h), strength)!!) }
-                    )
-                    StrengthSlider(
-                        base = base,
-                        strength = strength,
-                        dark = c.dark,
-                        onChange = { st -> base?.let { b -> viewModel.setDragColor(TaskPalette.withStrength(b, st)!!) } }
+                    Spacer(Modifier.height(4.dp))
+                    ColorField(
+                        title = "สี",
+                        selected = if (isWhite) null else dragColor,
+                        defaultColor = Color(0xFFE6EEEA),
+                        defaultLabel = "สีขาว",
+                        onSelect = { viewModel.setDragColor(it ?: AppSettings.DRAG_WHITE) }
                     )
                 }
                 Spacer(Modifier.height(12.dp))
