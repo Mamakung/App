@@ -95,7 +95,13 @@ class AppSettings @Inject constructor(@ApplicationContext context: Context) {
     val snooze: StateFlow<Int> = _snooze.asStateFlow()
     fun setSnooze(v: Int) { prefs.edit().putInt(KEY_SNOOZE, v).apply(); _snooze.value = v }
 
+    /** ไอคอนแอปแสดงวันที่ (เปิดเป็นค่าเริ่มต้น) มีผลตอนออกจากแอป */
+    private val _dateIcon = flowOf(KEY_DATE_ICON, true)
+    val dateIcon: StateFlow<Boolean> = _dateIcon.asStateFlow()
+    fun setDateIcon(v: Boolean) { prefs.edit().putBoolean(KEY_DATE_ICON, v).apply(); _dateIcon.value = v }
+
     companion object {
+        const val KEY_DATE_ICON = "date_icon"
         const val DRAG_WHITE = "white"
         const val DEFAULT_NOTIFY_SOUND = "app:snd_n1_sai"
         const val DEFAULT_ALARM_SOUND = "app:snd_a1_morning"

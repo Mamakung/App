@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- สร้างโดย tools/gen_date_icons.py ห้ามแก้เอง -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#1E2430" android:pathData="M39.32599999999999 74.0V70.491H44.77799999999999V56.919H44.516999999999996L40.398999999999994 62.313L37.614999999999995 60.138L42.458 53.757999999999996H49.12799999999999V70.491H53.419999999999995V74.0ZM63.772999999999996 74.0V70.114H54.87V66.402L62.758 53.757999999999996H67.92V66.75H70.47200000000001V70.114H67.92V74.0ZM58.35 66.75H63.772999999999996V58.253H63.483000000000004Z" />
+</vector>

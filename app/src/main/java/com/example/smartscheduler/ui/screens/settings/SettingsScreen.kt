@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Fullscreen
@@ -77,6 +78,8 @@ class SettingsViewModel @Inject constructor(
     fun setFabStyle(style: FabStyle) = settings.setFabStyle(style)
     fun setDragColor(key: String) = settings.setDragColor(key)
     fun setMotion(motion: Motion) = settings.setMotion(motion)
+    val dateIcon = settings.dateIcon
+    fun setDateIcon(v: Boolean) = settings.setDateIcon(v)
 }
 
 /** ชื่อสีตอนลากสำหรับแสดงสรุป */
@@ -196,6 +199,7 @@ fun AppearanceScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltView
     val fabStyle by viewModel.fabStyle.collectAsState()
     val dragColor by viewModel.dragColor.collectAsState()
     val motion by viewModel.motion.collectAsState()
+    val dateIcon by viewModel.dateIcon.collectAsState()
     val isWhite = dragColor == AppSettings.DRAG_WHITE
     val strength = if (isWhite) TaskPalette.DEFAULT_STRENGTH else TaskPalette.strengthOf(dragColor)
     val base = if (isWhite) null else TaskPalette.baseOf(dragColor)
@@ -219,6 +223,16 @@ fun AppearanceScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltView
                         defaultColor = Color(0xFFE6EEEA),
                         defaultLabel = "สีขาว",
                         onSelect = { viewModel.setDragColor(it ?: AppSettings.DRAG_WHITE) }
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Panel {
+                    SwitchRow(
+                        Icons.Filled.CalendarToday,
+                        "ไอคอนแสดงวันที่",
+                        "ไอคอนแอปเปลี่ยนตามวันที่ทุกวัน มีผลเมื่อออกจากแอป · บน Samsung ไอคอนบนหน้าจอหลักอาจหายตอนเปลี่ยนวัน ใช้วิดเจ็ต \"วันนี้\" แทนได้",
+                        dateIcon,
+                        viewModel::setDateIcon
                     )
                 }
                 Spacer(Modifier.height(12.dp))
