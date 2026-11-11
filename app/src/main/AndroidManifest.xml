@@ -70,6 +70,26 @@
                 android:resource="@xml/widget_today_info" />
         </receiver>
         <receiver
+            android:name=".widget.MonthWidgetProvider"
+            android:label="@string/widget_month_label"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_month_info" />
+        </receiver>
+        <activity
+            android:name=".widget.WidgetConfigActivity"
+            android:exported="true"
+            android:label="สีวิดเจ็ต"
+            android:theme="@style/Theme.SmartSchedulerAI">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+        <receiver
             android:name=".update.UpdateActionReceiver"
             android:exported="false" />
         <receiver

@@ -2,4 +2,6 @@
     <string name="app_name">Smart Scheduler + AI Stocks</string>
     <string name="widget_today_desc">วันที่วันนี้ พร้อมคาดสีกิจกรรม</string>
     <string name="widget_today_label">วันนี้</string>
+    <string name="widget_month_desc">ปฏิทินเดือนนี้ พร้อมไอคอนกิจกรรม</string>
+    <string name="widget_month_label">เดือนนี้</string>
 </resources>

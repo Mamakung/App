@@ -281,6 +281,16 @@ fun DashboardScreen(
 ) {
     val state by viewModel.state.collectAsState()
 
+    // แตะวันในวิดเจ็ตเดือน → เปิดรายวันของวันนั้น
+    val openDate by com.example.smartscheduler.widget.OpenDateRequest.date.collectAsState()
+    LaunchedEffect(openDate) {
+        openDate?.let { d ->
+            viewModel.select(d)
+            viewModel.setMode(CalendarMode.DAY)
+            com.example.smartscheduler.widget.OpenDateRequest.date.value = null
+        }
+    }
+
     // ปุ่มย้อนกลับของเครื่อง: ดูรายวัน/รายสัปดาห์อยู่ ให้กลับไปหน้าเดือนก่อน (ยังไม่ออกจากแอป)
     BackHandler(enabled = state.mode != CalendarMode.MONTH) { viewModel.setMode(CalendarMode.MONTH) }
     var editing by remember { mutableStateOf<DashEdit?>(null) }

@@ -35,6 +35,7 @@ class MainActivity : ComponentActivity() {
         val startDestination = if (currentUser.needsLogin) Routes.AUTH else Routes.DASHBOARD
 
         val openUpdate = intent?.getBooleanExtra(EXTRA_OPEN_UPDATE, false) == true
+        readOpenDate(intent)
 
         setContent {
             SmartSchedulerTheme {
@@ -43,7 +44,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        readOpenDate(intent)
+    }
+
+    /** แตะวันในวิดเจ็ตเดือน → เปิดวันนั้นในหน้าปฏิทิน */
+    private fun readOpenDate(intent: android.content.Intent?) {
+        val day = intent?.getLongExtra(EXTRA_OPEN_DATE, Long.MIN_VALUE) ?: Long.MIN_VALUE
+        if (day != Long.MIN_VALUE) {
+            com.example.smartscheduler.widget.OpenDateRequest.date.value = java.time.LocalDate.ofEpochDay(day)
+            intent?.removeExtra(EXTRA_OPEN_DATE)
+        }
+    }
+
     companion object {
+        const val EXTRA_OPEN_DATE = "open_date"
         const val EXTRA_OPEN_UPDATE = "open_update"
     }
 }
