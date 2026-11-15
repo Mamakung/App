@@ -418,6 +418,8 @@ private fun MonthPreview(
     onTap: (LocalDate) -> Unit
 ) {
     val c = AppTheme.colors
+    // ปัดซ้าย/ขวาเปลี่ยนเดือน (ถ้ามีเดือนให้ไป)
+    Column(Modifier.horizontalSwipe { forward -> if (forward) onNext?.invoke() else onPrev?.invoke() }) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
             "${Recurrence.monthLabelsTh[month.monthValue - 1]} ${month.year + 543}",
@@ -504,5 +506,6 @@ private fun MonthPreview(
                 }
             }
         }
+    }
     }
 }

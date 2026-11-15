@@ -1,6 +1,9 @@
 package com.example.smartscheduler.ui.screens.dashboard
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
@@ -298,6 +301,11 @@ fun DashboardScreen(
     var confirmAll by remember { mutableStateOf<DashEdit?>(null) }
     // ลากเลือกหลายวันในปฏิทินแล้วปล่อย: เพิ่มกิจกรรมเดียวให้ทุกวันในช่วง
     var rangeEdit by remember { mutableStateOf<Pair<LocalDate, LocalDate>?>(null) }
+    // รายวัน: ปัดครั้งแรกขึ้นป้าย 2 วินาที ปัดซ้ำทางเดิมในช่วงนั้นถึงเปลี่ยนวัน
+    var swipeHint by remember { mutableStateOf(0) }
+    var swipeHintKey by remember { mutableStateOf(0) }
+    LaunchedEffect(swipeHintKey) { if (swipeHint != 0) { delay(2000); swipeHint = 0 } }
+    LaunchedEffect(state.mode) { swipeHint = 0 }
     val context = LocalContext.current
     val nowMin = rememberNowMinutes()
     val today = LocalDate.now()
@@ -307,6 +315,15 @@ fun DashboardScreen(
         Column(
             Modifier
                 .fillMaxSize()
+                // ปัดซ้าย/ขวา: เดือน/สัปดาห์ เปลี่ยนทันที, รายวันต้องปัด 2 ที (มีป้ายบอก)
+                .horizontalSwipe { forward ->
+                    if (state.mode != CalendarMode.DAY) viewModel.step(forward)
+                    else {
+                        val dir = if (forward) 1 else -1
+                        if (swipeHint == dir) { swipeHint = 0; viewModel.step(forward) }
+                        else { swipeHint = dir; swipeHintKey++ }
+                    }
+                }
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 96.dp)
@@ -366,6 +383,33 @@ fun DashboardScreen(
                     onOpenTask = { editing = DashEdit(it, state.date) },
                     onAdd = { editing = DashEdit(null, state.date) }
                 )
+            }
+        }
+
+        // ป้ายบอกให้ปัดอีกครั้ง (รายวัน)
+        AnimatedVisibility(
+            visible = swipeHint != 0 && state.mode == CalendarMode.DAY,
+            enter = fadeIn(tween(150)) + slideInVertically(tween(200)) { it / 2 },
+            exit = fadeOut(tween(200)),
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 104.dp)
+        ) {
+            var shownDir by remember { mutableStateOf(1) }
+            if (swipeHint != 0) shownDir = swipeHint
+            val target = state.date.plusDays(shownDir.toLong())
+            Row(
+                Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(c.ink)
+                    .padding(horizontal = 18.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (shownDir < 0) Icon(Icons.Filled.ChevronLeft, contentDescription = null, tint = c.ground, modifier = Modifier.size(20.dp))
+                Text(
+                    if (shownDir > 0) "ปัดอีกครั้งเพื่อไป ${shortDay(target)}" else "ปัดอีกครั้งเพื่อกลับ ${shortDay(target)}",
+                    style = MaterialTheme.typography.bodyMedium, color = c.ground,
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
+                if (shownDir > 0) Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = c.ground, modifier = Modifier.size(20.dp))
             }
         }
 
@@ -786,15 +830,15 @@ private fun MonthGrid(
                     )
                 }
         ) {
-            // เปลี่ยนเดือน: ตารางเลื่อนขึ้น/ลงนุ่มๆ
+            // เปลี่ยนเดือน: ตารางเลื่อนซ้าย/ขวานุ่มๆ (ตามทิศที่ปัด)
             AnimatedContent(
                 targetState = first,
                 transitionSpec = {
                     if (!look.animate) EnterTransition.None togetherWith ExitTransition.None
                     else {
                         val dir = if (targetState.isAfter(initialState)) 1 else -1
-                        (slideInVertically(tween(260)) { dir * it / 6 } + fadeIn(tween(200))) togetherWith
-                            (slideOutVertically(tween(180)) { -dir * it / 6 } + fadeOut(tween(150)))
+                        (slideInHorizontally(tween(260)) { dir * it / 4 } + fadeIn(tween(200))) togetherWith
+                            (slideOutHorizontally(tween(180)) { -dir * it / 4 } + fadeOut(tween(150)))
                     }
                 },
                 label = "month"

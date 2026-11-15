@@ -40,6 +40,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.core.graphics.ColorUtils
 import com.example.smartscheduler.ui.theme.AppTheme
 import com.example.smartscheduler.ui.theme.TaskPalette
@@ -111,7 +114,7 @@ private fun readableOn(color: Color): Color =
  * แผ่น "เลือกสี": รหัสสี + วงสำเร็จรูป + กล่องลากเลือก (ความสด/ความสว่าง) + แถบโทนสี
  * คืนค่าเป็นรหัส "#RRGGBB"
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ColorPickerSheet(initial: Int, onPick: (String) -> Unit, onDismiss: () -> Unit) {
     val c = AppTheme.colors
@@ -132,14 +135,29 @@ fun ColorPickerSheet(initial: Int, onPick: (String) -> Unit, onDismiss: () -> Un
         sat = hsv[1]; value = hsv[2]
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.surface) {
+    // หน้าต่างของตัวเอง ยึดกับจอ (เปิดจากในหน้าต่างอื่นก็ไม่เบี้ยว) กว้างเต็มจอ ชิดล่าง
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss),
+            contentAlignment = Alignment.BottomCenter
+        ) {
         Column(
             Modifier
                 .fillMaxWidth()
+                .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+                .background(c.surface)
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+                .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
-                .padding(bottom = 20.dp)
+                .padding(top = 10.dp, bottom = 20.dp)
         ) {
+            Box(Modifier.align(Alignment.CenterHorizontally).padding(bottom = 12.dp).size(width = 36.dp, height = 4.dp).clip(RoundedCornerShape(2.dp)).background(c.line))
             Text("เลือกสี", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(12.dp))
 
@@ -279,4 +297,5 @@ fun ColorPickerSheet(initial: Int, onPick: (String) -> Unit, onDismiss: () -> Un
             }
         }
     }
+        }
 }
