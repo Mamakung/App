@@ -12,6 +12,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -55,7 +60,7 @@ import javax.inject.Inject
 enum class BatchMode { PATTERN, EXPLICIT }
 
 data class BatchUiState(
-    val mode: BatchMode = BatchMode.PATTERN,
+    val mode: BatchMode = BatchMode.EXPLICIT,
     val startDate: LocalDate = LocalDate.now(),
     val endDate: LocalDate = LocalDate.now().plusMonths(1),
     val days: Set<String> = Recurrence.weekdays,
@@ -107,7 +112,8 @@ class BatchAssignViewModel @Inject constructor(
             startDate = minOf(presetFrom, presetTo),
             endDate = maxOf(presetFrom, presetTo),
             days = Recurrence.dayCodes.toSet(),
-            months = Recurrence.allMonths
+            months = Recurrence.allMonths,
+            mode = BatchMode.PATTERN
         ) else BatchUiState()
     )
     val state: StateFlow<BatchUiState> = _state.asStateFlow()
@@ -133,6 +139,24 @@ class BatchAssignViewModel @Inject constructor(
             else -> s
         }
     }
+
+    /** กดค้างลากในปฏิทิน: ใส่ ([on]) หรือเอาออก ทีละวันที่ลากผ่าน */
+    fun setDay(d: LocalDate, on: Boolean) = _state.update { s ->
+        if (s.mode == BatchMode.EXPLICIT) {
+            s.copy(explicitDates = if (on) (s.explicitDates + d).distinct().sorted() else s.explicitDates - d)
+        } else {
+            val inPattern = d in s.patternDates()
+            when {
+                on && inPattern -> s.copy(excluded = s.excluded - d)
+                on && s.inRange(d) -> s.copy(added = s.added + d)
+                !on && inPattern -> s.copy(excluded = s.excluded + d)
+                !on -> s.copy(added = s.added - d)
+                else -> s
+            }
+        }
+    }
+
+    fun clearExplicit() = _state.update { it.copy(explicitDates = emptyList()) }
 
     /** ล้างการแตะเอาออก/ใส่เพิ่ม กลับไปตามรูปแบบ */
     fun resetDayEdits() = _state.update { it.copy(excluded = emptySet(), added = emptySet()) }
@@ -242,9 +266,9 @@ fun BatchAssignScreen(onBack: () -> Unit, viewModel: BatchAssignViewModel = hilt
         ) {
             item {
                 SegmentedToggle(
-                    options = listOf("ทำซ้ำตามรูปแบบ", "เลือกวันที่เอง"),
-                    selectedIndex = if (state.mode == BatchMode.PATTERN) 0 else 1,
-                    onSelect = { viewModel.setMode(if (it == 0) BatchMode.PATTERN else BatchMode.EXPLICIT) }
+                    options = listOf("เลือกวันที่เอง", "ทำซ้ำตามรูปแบบ"),
+                    selectedIndex = if (state.mode == BatchMode.EXPLICIT) 0 else 1,
+                    onSelect = { viewModel.setMode(if (it == 0) BatchMode.EXPLICIT else BatchMode.PATTERN) }
                 )
                 Spacer(Modifier.height(16.dp))
             }
@@ -260,40 +284,19 @@ fun BatchAssignScreen(onBack: () -> Unit, viewModel: BatchAssignViewModel = hilt
                     SectionTitle("เฉพาะเดือน")
                     MonthPicker(state.months, viewModel::setMonths)
                 }
-            } else {
-                item {
-                    SectionTitle("วันที่ที่เลือก") {
-                        TextButton(onClick = { showAddDate = true }) {
-                            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(4.dp)); Text("เพิ่มวันที่")
-                        }
-                    }
-                    if (state.explicitDates.isEmpty()) {
-                        Hint("ยังไม่ได้เลือกวันที่ แตะ \"เพิ่มวันที่\" เพื่อเลือกจากปฏิทิน")
-                    }
-                    state.explicitDates.forEach { d ->
-                        Row(
-                            Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(thaiShortDate(d), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                            IconButton(onClick = { viewModel.removeDate(d) }) {
-                                Icon(Icons.Filled.Close, contentDescription = "เอาวันที่ออก", tint = c.muted)
-                            }
-                        }
-                    }
-                }
             }
 
-            if (dates.isNotEmpty() || state.mode == BatchMode.PATTERN) {
+            run {
                 item {
-                    SectionTitle("วันที่จะได้รับ")
+                    val explicit = state.mode == BatchMode.EXPLICIT
+                    SectionTitle(if (explicit) "แตะเลือกวันในปฏิทิน" else "วันที่จะได้รับ")
                     // เดือนที่เลื่อนดูได้: ตั้งแต่เดือนแรกถึงเดือนสุดท้ายของช่วง
                     val first = YearMonth.from(if (state.mode == BatchMode.PATTERN) state.startDate else dates.firstOrNull() ?: LocalDate.now())
                     val last = YearMonth.from(if (state.mode == BatchMode.PATTERN) minOf(state.endDate, state.startDate.plusDays(366)) else dates.lastOrNull() ?: LocalDate.now())
                         .let { if (it.isBefore(first)) first else it }
                     var shown by remember { mutableStateOf(first) }
-                    if (shown.isBefore(first) || shown.isAfter(last)) shown = first
+                    // เลือกวันที่เอง: เลื่อนได้ทุกเดือน / ตามรูปแบบ: เฉพาะเดือนในช่วง
+                    if (!explicit && (shown.isBefore(first) || shown.isAfter(last))) shown = first
                     val pattern = remember(state) { if (state.mode == BatchMode.PATTERN) state.patternDates().toSet() else emptySet() }
                     // ไอคอนของกิจกรรมที่จะเพิ่ม (ไอคอนเดียวกันสีเดียวกันนับครั้งเดียว) เรียงตามเวลา
                     val marks = state.tasks.sortedBy { it.startMin }
@@ -306,17 +309,30 @@ fun BatchAssignScreen(onBack: () -> Unit, viewModel: BatchAssignViewModel = hilt
                             hits = dates.toSet(),
                             excluded = if (state.mode == BatchMode.PATTERN) state.excluded.filter { it in pattern }.toSet() else emptySet(),
                             canTap = { d -> state.mode == BatchMode.EXPLICIT || state.inRange(d) },
-                            onPrev = if (shown.isAfter(first)) ({ shown = shown.minusMonths(1) }) else null,
-                            onNext = if (shown.isBefore(last)) ({ shown = shown.plusMonths(1) }) else null,
-                            onTap = viewModel::toggleDay
+                            onPrev = if (explicit || shown.isAfter(first)) ({ shown = shown.minusMonths(1) }) else null,
+                            onNext = if (explicit || shown.isBefore(last)) ({ shown = shown.plusMonths(1) }) else null,
+                            onTap = viewModel::toggleDay,
+                            onDragSet = viewModel::setDay
                         )
+                        if (explicit) {
+                            val perMonth = dates.groupBy { YearMonth.from(it) }
+                            Row(Modifier.padding(top = 6.dp, start = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("เลือกแล้ว ${dates.size} วัน", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                if (perMonth.size > 1) Hint(
+                                    perMonth.entries.joinToString(prefix = " · ", separator = " · ") { (m, l) -> "${Recurrence.monthLabelsTh[m.monthValue - 1]} ${l.size}" },
+                                    Modifier.weight(1f)
+                                ) else Spacer(Modifier.weight(1f))
+                                if (dates.isNotEmpty()) TextButton(onClick = viewModel::clearExplicit) { Text("ล้าง") }
+                            }
+                        }
                     }
                     val removed = state.excluded.count { it in pattern }
                     val extra = state.added.count { state.inRange(it) && it !in pattern }
-                    Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (explicit) Hint("แตะวันเพื่อเลือก · กดค้างแล้วลากเพื่อเลือกหลายวัน · ปัดซ้าย/ขวาเปลี่ยนเดือน", Modifier.padding(top = 6.dp))
+                    else Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Hint(
                             buildString {
-                                append("แตะวันเพื่อเอาออกหรือใส่กลับ")
+                                append("แตะวันเพื่อเอาออกหรือใส่กลับ · กดค้างลากได้")
                                 if (removed > 0) append(" · เอาออก $removed วัน")
                                 if (extra > 0) append(" · เพิ่มเอง $extra วัน")
                             },
@@ -415,7 +431,8 @@ private fun MonthPreview(
     canTap: (LocalDate) -> Boolean,
     onPrev: (() -> Unit)?,
     onNext: (() -> Unit)?,
-    onTap: (LocalDate) -> Unit
+    onTap: (LocalDate) -> Unit,
+    onDragSet: ((LocalDate, Boolean) -> Unit)? = null
 ) {
     val c = AppTheme.colors
     // ปัดซ้าย/ขวาเปลี่ยนเดือน (ถ้ามีเดือนให้ไป)
@@ -447,7 +464,56 @@ private fun MonthPreview(
     Spacer(Modifier.height(4.dp))
     val lead = Recurrence.column(month.atDay(1).dayOfWeek)
     val cells = lead + month.lengthOfMonth()
-    for (week in 0 until (cells + 6) / 7) {
+    val rows = (cells + 6) / 7
+
+    // กดค้างแล้วลาก: ใส่/เอาออกทุกวันที่ลากผ่าน (เริ่มจากวันที่ติ๊กอยู่ = เอาออก)
+    // กดค้างแล้วปล่อยที่เดิม = แตะธรรมดา (ให้ตัวช่องจัดการเอง)
+    val curHits by rememberUpdatedState(hits)
+    val curCanTap by rememberUpdatedState(canTap)
+    val setDay by rememberUpdatedState(onDragSet)
+    val haptic = LocalHapticFeedback.current
+    var dragSet by remember(month) { mutableStateOf(setOf<LocalDate>()) }
+    Column(
+        if (onDragSet == null) Modifier else Modifier.pointerInput(month, rows) {
+            fun dateAt(o: Offset): LocalDate? {
+                val col = (o.x / (size.width / 7f)).toInt().coerceIn(0, 6)
+                val row = (o.y / (size.height / rows.toFloat())).toInt()
+                if (row !in 0 until rows) return null
+                val n = row * 7 + col - lead + 1
+                return if (n in 1..month.lengthOfMonth()) month.atDay(n) else null
+            }
+            var start: LocalDate? = null
+            var adding = true
+            var startApplied = false
+            detectDragGesturesAfterLongPress(
+                onDragStart = { o ->
+                    val d = dateAt(o)?.takeIf { curCanTap(it) }
+                    start = d; startApplied = false
+                    if (d != null) {
+                        adding = d !in curHits
+                        dragSet = setOf(d)
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    }
+                },
+                onDrag = { ch, _ ->
+                    val s0 = start ?: return@detectDragGesturesAfterLongPress
+                    ch.consume()
+                    val d = dateAt(ch.position)?.takeIf { curCanTap(it) } ?: return@detectDragGesturesAfterLongPress
+                    if (d !in dragSet || (!startApplied && d != s0)) {
+                        if (!startApplied && d != s0) { setDay?.invoke(s0, adding); startApplied = true }
+                        if (d != s0) {
+                            dragSet = dragSet + d
+                            setDay?.invoke(d, adding)
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
+                    }
+                },
+                onDragEnd = { dragSet = emptySet(); start = null },
+                onDragCancel = { dragSet = emptySet(); start = null }
+            )
+        }
+    ) {
+    for (week in 0 until rows) {
         Row(Modifier.padding(vertical = 2.dp)) {
             for (col in 0..6) {
                 val dayNum = week * 7 + col - lead + 1
@@ -464,7 +530,13 @@ private fun MonthPreview(
                         .padding(2.dp)
                         .clip(RoundedCornerShape(10.dp))
                         .background(bg)
-                        .then(if (out) Modifier.border(1.5.dp, c.outline, RoundedCornerShape(10.dp)) else Modifier)
+                        .then(
+                            when {
+                                date != null && date in dragSet -> Modifier.border(2.dp, c.ink, RoundedCornerShape(10.dp))
+                                out -> Modifier.border(1.5.dp, c.outline, RoundedCornerShape(10.dp))
+                                else -> Modifier
+                            }
+                        )
                         .then(
                             if (tappable && date != null) Modifier.toggleable(
                                 value = hit, role = Role.Checkbox, onValueChange = { onTap(date) }
@@ -506,6 +578,7 @@ private fun MonthPreview(
                 }
             }
         }
+    }
     }
     }
 }
