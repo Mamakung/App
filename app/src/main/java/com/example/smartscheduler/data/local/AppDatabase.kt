@@ -19,9 +19,11 @@ import com.example.smartscheduler.data.local.entity.*
         StockNoteEntity::class,
         MarketNewsSummaryEntity::class,
         StockRecommendationEntity::class,
-        CategoryEntity::class
+        CategoryEntity::class,
+        NoteFolderEntity::class,
+        NoteEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -33,6 +35,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun marketNewsDao(): MarketNewsDao
     abstract fun stockRecommendationDao(): StockRecommendationDao
     abstract fun categoryDao(): CategoryDao
+    abstract fun noteDao(): NoteDao
 
     companion object {
         /** v3: วันทำซ้ำแยกต่อรายการกิจวัตร (เพิ่มคอลัมน์ ข้อมูลเดิมอยู่ครบ) */
@@ -106,6 +109,16 @@ abstract class AppDatabase : RoomDatabase() {
                     db.execSQL("ALTER TABLE $table ADD COLUMN alarm INTEGER NOT NULL DEFAULT 0")
                     db.execSQL("ALTER TABLE $table ADD COLUMN alarmSound TEXT")
                 }
+            }
+        }
+
+        /** v9: สมุด (โฟลเดอร์ + บันทึก/PDF) */
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `note_folders` (`folderId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ownerUid` TEXT NOT NULL, `parentId` INTEGER, `name` TEXT NOT NULL, `color` TEXT, `icon` TEXT, `createdAt` INTEGER NOT NULL)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_note_folders_ownerUid` ON `note_folders` (`ownerUid`)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `notes` (`noteId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ownerUid` TEXT NOT NULL, `folderId` INTEGER, `kind` TEXT NOT NULL, `title` TEXT NOT NULL, `body` TEXT NOT NULL, `filePath` TEXT, `pageCount` INTEGER NOT NULL, `lastPage` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_notes_ownerUid` ON `notes` (`ownerUid`)")
             }
         }
 

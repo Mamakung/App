@@ -1,0 +1,473 @@
+package com.example.smartscheduler.ui.screens.notes
+
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.smartscheduler.data.local.entity.NoteEntity
+import com.example.smartscheduler.data.local.entity.NoteFolderEntity
+import com.example.smartscheduler.data.repository.NoteDoc
+import com.example.smartscheduler.data.repository.NoteRepository
+import com.example.smartscheduler.ui.components.*
+import com.example.smartscheduler.ui.theme.AppTheme
+import com.example.smartscheduler.ui.theme.TaskPalette
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+data class NotebookState(
+    val folders: List<NoteFolderEntity> = emptyList(),
+    val notes: List<NoteEntity> = emptyList(),
+    val query: String = ""
+)
+
+@HiltViewModel
+class NotebookViewModel @Inject constructor(
+    private val repo: NoteRepository,
+    savedState: SavedStateHandle
+) : ViewModel() {
+    /** โฟลเดอร์ที่เปิดอยู่ (null = หน้าสมุด) */
+    val folderId: Long? = savedState.get<Long>("id")?.takeIf { it >= 0 }
+    private val query = MutableStateFlow("")
+
+    val state: StateFlow<NotebookState> = combine(repo.observeFolders(), repo.observeNotes(), query) { f, n, q ->
+        NotebookState(f, n, q)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NotebookState())
+
+    fun setQuery(q: String) { query.value = q }
+    fun saveFolder(f: NoteFolderEntity, onSaved: (Long) -> Unit = {}) = viewModelScope.launch { onSaved(repo.saveFolder(f)) }
+    fun deleteFolder(id: Long) = viewModelScope.launch { repo.deleteFolder(id) }
+    fun deleteNote(id: Long) = viewModelScope.launch { repo.deleteNote(id) }
+    fun moveNote(id: Long, to: Long?) = viewModelScope.launch { repo.moveNote(id, to) }
+    fun moveFolder(id: Long, to: Long?) = viewModelScope.launch { repo.moveFolder(id, to) }
+}
+
+/** จำนวนรายการในโฟลเดอร์ (บันทึก/PDF + โฟลเดอร์ย่อย ชั้นเดียว) */
+private fun countIn(s: NotebookState, folderId: Long) =
+    s.notes.count { it.folderId == folderId } + s.folders.count { it.parentId == folderId }
+
+/** ทุกโฟลเดอร์ใต้ [folderId] (รวมตัวเอง) กันย้ายโฟลเดอร์ไปไว้ในลูกของตัวเอง */
+private fun descendants(all: List<NoteFolderEntity>, folderId: Long): Set<Long> {
+    val ids = mutableSetOf(folderId)
+    var grew = true
+    while (grew) {
+        val more = all.filter { it.parentId in ids && it.folderId !in ids }.map { it.folderId }
+        grew = more.isNotEmpty(); ids += more
+    }
+    return ids
+}
+
+fun relativeTime(ms: Long): String {
+    val diff = (System.currentTimeMillis() - ms) / 60_000
+    return when {
+        diff < 1 -> "เมื่อสักครู่"
+        diff < 60 -> "$diff นาทีที่แล้ว"
+        diff < 24 * 60 -> "${diff / 60} ชั่วโมงที่แล้ว"
+        diff < 48 * 60 -> "เมื่อวาน"
+        else -> java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).toLocalDate().let {
+            "${it.dayOfMonth} ${com.example.smartscheduler.domain.model.Recurrence.monthLabelsTh[it.monthValue - 1]}"
+        }
+    }
+}
+
+@Composable
+fun folderAccent(f: NoteFolderEntity?): Color =
+    TaskPalette.resolve(f?.color, AppTheme.colors.dark)?.first ?: AppTheme.colors.ink
+
+/**
+ * หน้าสมุด (folderId = null) และหน้าในโฟลเดอร์ ใช้หน้าเดียวกัน
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun NotebookScreen(
+    onOpenFolder: (Long) -> Unit,
+    onOpenNote: (Long) -> Unit,
+    onNewNote: (Long?) -> Unit,
+    onBack: (() -> Unit)? = null,
+    viewModel: NotebookViewModel = hiltViewModel()
+) {
+    val c = AppTheme.colors
+    val s by viewModel.state.collectAsState()
+    val folderId = viewModel.folderId
+    val folder = s.folders.firstOrNull { it.folderId == folderId }
+    var editFolder by remember { mutableStateOf<NoteFolderEntity?>(null) }
+    var newFolder by remember { mutableStateOf(false) }
+    var deleteFolder by remember { mutableStateOf<NoteFolderEntity?>(null) }
+    var deleteNote by remember { mutableStateOf<NoteEntity?>(null) }
+    var moveTarget by remember { mutableStateOf<Any?>(null) }
+    var fabMenu by remember { mutableStateOf(false) }
+    var topMenu by remember { mutableStateOf(false) }
+
+    // ทางกลับไปหน้าสมุด เช่น สมุด › เรียน › เซนเซอร์
+    val path = remember(s.folders, folderId) {
+        val out = mutableListOf<NoteFolderEntity>()
+        var cur = s.folders.firstOrNull { it.folderId == folderId }
+        while (cur != null && out.size < 20) { out.add(0, cur); cur = s.folders.firstOrNull { it.folderId == cur!!.parentId } }
+        out
+    }
+
+    val searching = s.query.isNotBlank()
+    val q = s.query.trim()
+    val subFolders = if (searching) s.folders.filter { it.name.contains(q, ignoreCase = true) }
+        else s.folders.filter { it.parentId == folderId }
+    val items = when {
+        searching -> s.notes.filter { it.title.contains(q, true) || NoteDoc.plain(it.body).contains(q, true) }
+        folderId == null -> s.notes.filter { it.folderId == null }
+        else -> s.notes.filter { it.folderId == folderId }
+    }
+    val recent = if (folderId == null && !searching) s.notes.take(5) else emptyList()
+
+    Box(Modifier.fillMaxSize().background(c.ground)) {
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 110.dp)
+        ) {
+            item {
+                if (onBack == null) {
+                    Text("สมุด", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 12.dp))
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "กลับ") }
+                        Icon(taskIconByKey(folder?.icon) ?: Icons.Filled.Folder, contentDescription = null, tint = folderAccent(folder), modifier = Modifier.size(22.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(folder?.name ?: "", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Box {
+                            IconButton(onClick = { topMenu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "ตัวเลือกโฟลเดอร์") }
+                            DropdownMenu(expanded = topMenu, onDismissRequest = { topMenu = false }) {
+                                DropdownMenuItem(text = { Text("แก้ไขโฟลเดอร์") }, leadingIcon = { Icon(Icons.Filled.Edit, null) }, onClick = { topMenu = false; editFolder = folder })
+                                DropdownMenuItem(text = { Text("ย้ายโฟลเดอร์") }, leadingIcon = { Icon(Icons.Filled.DriveFileMove, null) }, onClick = { topMenu = false; moveTarget = folder })
+                                DropdownMenuItem(text = { Text("ลบโฟลเดอร์", color = MaterialTheme.colorScheme.error) }, leadingIcon = { Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error) }, onClick = { topMenu = false; deleteFolder = folder })
+                            }
+                        }
+                    }
+                    Text(
+                        (listOf("สมุด") + path.map { it.name }).joinToString(" › "),
+                        style = MaterialTheme.typography.labelMedium, color = c.muted,
+                        modifier = Modifier.padding(start = 12.dp, bottom = 8.dp), maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
+                }
+                // ค้นหา
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.surface).padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Filled.Search, contentDescription = null, tint = c.muted, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Box(Modifier.weight(1f)) {
+                        if (s.query.isEmpty()) Text("ค้นหาบันทึกและโฟลเดอร์", color = c.muted, style = MaterialTheme.typography.bodyLarge)
+                        BasicTextField(
+                            value = s.query, onValueChange = viewModel::setQuery, singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(color = c.ink), cursorBrush = SolidColor(c.ink),
+                            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "ค้นหา" }
+                        )
+                    }
+                    if (s.query.isNotEmpty()) Icon(Icons.Filled.Close, contentDescription = "ล้างคำค้น", tint = c.muted, modifier = Modifier.size(20.dp).clickable { viewModel.setQuery("") })
+                }
+            }
+
+            if (subFolders.isNotEmpty()) {
+                item { Hint(if (searching) "โฟลเดอร์" else if (folderId == null) "โฟลเดอร์" else "โฟลเดอร์ย่อย", Modifier.padding(top = 18.dp, bottom = 8.dp)) }
+                items(subFolders.chunked(2), key = { row -> "f" + row.first().folderId }) { row ->
+                    Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        row.forEach { f ->
+                            FolderCard(
+                                f, countIn(s, f.folderId), Modifier.weight(1f),
+                                onClick = { onOpenFolder(f.folderId) },
+                                onEdit = { editFolder = f }, onMove = { moveTarget = f }, onDelete = { deleteFolder = f }
+                            )
+                        }
+                        if (row.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
+
+            if (recent.isNotEmpty()) {
+                item { Hint("ล่าสุด", Modifier.padding(top = 14.dp, bottom = 4.dp)) }
+                items(recent, key = { "r" + it.noteId }) { n ->
+                    NoteRow(n, s.folders.firstOrNull { it.folderId == n.folderId }?.name, onClick = { onOpenNote(n.noteId) }, onMove = { moveTarget = n }, onDelete = { deleteNote = n })
+                }
+            }
+
+            val listItems = if (folderId == null && !searching) items.filter { n -> recent.none { it.noteId == n.noteId } } else items
+            if (listItems.isNotEmpty()) {
+                item { Hint(if (searching) "บันทึก" else if (folderId == null) "ไม่มีโฟลเดอร์" else "รายการ", Modifier.padding(top = 14.dp, bottom = 4.dp)) }
+                items(listItems, key = { "n" + it.noteId }) { n ->
+                    NoteRow(n, if (searching) s.folders.firstOrNull { it.folderId == n.folderId }?.name else null, onClick = { onOpenNote(n.noteId) }, onMove = { moveTarget = n }, onDelete = { deleteNote = n })
+                }
+            }
+
+            if (subFolders.isEmpty() && items.isEmpty() && recent.isEmpty()) {
+                item {
+                    EmptyState(
+                        icon = if (searching) Icons.Filled.SearchOff else Icons.Filled.EditNote,
+                        title = if (searching) "ไม่พบ \"$q\"" else if (folderId == null) "สมุดยังว่าง" else "โฟลเดอร์นี้ยังว่าง",
+                        subtitle = if (searching) "ลองคำอื่น" else "แตะ + เพื่อเขียนบันทึกหรือสร้างโฟลเดอร์",
+                        actionLabel = if (searching) null else "บันทึกใหม่",
+                        onAction = if (searching) null else ({ onNewNote(folderId) })
+                    )
+                }
+            }
+        }
+
+        // ปุ่ม + : บันทึกใหม่ / โฟลเดอร์ใหม่ / นำเข้า PDF (รอบหน้า)
+        Box(Modifier.align(Alignment.BottomEnd).padding(20.dp)) {
+            FloatingActionButton(
+                onClick = { fabMenu = !fabMenu },
+                containerColor = c.ink, contentColor = c.ground, shape = RoundedCornerShape(18.dp)
+            ) { Icon(if (fabMenu) Icons.Filled.Close else Icons.Filled.Add, contentDescription = "เพิ่ม") }
+            DropdownMenu(expanded = fabMenu, onDismissRequest = { fabMenu = false }) {
+                DropdownMenuItem(text = { Text("บันทึกใหม่") }, leadingIcon = { Icon(Icons.Filled.EditNote, null) }, onClick = { fabMenu = false; onNewNote(folderId) })
+                DropdownMenuItem(text = { Text("โฟลเดอร์ใหม่") }, leadingIcon = { Icon(Icons.Filled.CreateNewFolder, null) }, onClick = { fabMenu = false; newFolder = true })
+                DropdownMenuItem(
+                    text = { Column { Text("นำเข้า PDF"); Text("เร็วๆ นี้", style = MaterialTheme.typography.labelSmall, color = c.muted) } },
+                    leadingIcon = { Icon(Icons.Filled.PictureAsPdf, null) }, enabled = false, onClick = {}
+                )
+            }
+        }
+    }
+
+    // ---------- หน้าต่าง ----------
+    if (newFolder || editFolder != null) {
+        FolderDialog(
+            initial = editFolder,
+            onSave = { name, color, icon ->
+                val base = editFolder ?: NoteFolderEntity(ownerUid = "", parentId = folderId, name = name)
+                viewModel.saveFolder(base.copy(name = name, color = color, icon = icon))
+                newFolder = false; editFolder = null
+            },
+            onDismiss = { newFolder = false; editFolder = null }
+        )
+    }
+    deleteFolder?.let { f ->
+        val n = descendants(s.folders, f.folderId).let { ids -> s.notes.count { it.folderId in ids } + ids.size - 1 }
+        ConfirmDeleteDialog(
+            title = "ลบโฟลเดอร์ \"${f.name}\"",
+            message = if (n == 0) "โฟลเดอร์ว่าง ลบได้เลย" else "จะลบทุกอย่างข้างใน $n รายการด้วย (รวมโฟลเดอร์ย่อย) ย้อนกลับไม่ได้",
+            confirmText = "ลบ",
+            onConfirm = {
+                viewModel.deleteFolder(f.folderId); deleteFolder = null
+                if (f.folderId == folderId) onBack?.invoke()
+            },
+            onDismiss = { deleteFolder = null }
+        )
+    }
+    deleteNote?.let { n ->
+        ConfirmDeleteDialog(
+            title = "ลบ \"${n.title.ifBlank { "บันทึกไม่มีชื่อ" }}\"",
+            message = "ลบแล้วย้อนกลับไม่ได้ รูปและไฟล์แนบในบันทึกจะถูกลบด้วย",
+            confirmText = "ลบ",
+            onConfirm = { viewModel.deleteNote(n.noteId); deleteNote = null },
+            onDismiss = { deleteNote = null }
+        )
+    }
+    moveTarget?.let { t ->
+        val blocked = if (t is NoteFolderEntity) descendants(s.folders, t.folderId) else emptySet()
+        MoveDialog(
+            folders = s.folders,
+            current = if (t is NoteFolderEntity) t.parentId else (t as NoteEntity).folderId,
+            blocked = blocked,
+            onPick = { to ->
+                if (t is NoteFolderEntity) viewModel.moveFolder(t.folderId, to) else viewModel.moveNote((t as NoteEntity).noteId, to)
+                moveTarget = null
+            },
+            onDismiss = { moveTarget = null }
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun FolderCard(
+    f: NoteFolderEntity, count: Int, modifier: Modifier,
+    onClick: () -> Unit, onEdit: () -> Unit, onMove: () -> Unit, onDelete: () -> Unit
+) {
+    val c = AppTheme.colors
+    val accent = folderAccent(f)
+    var menu by remember { mutableStateOf(false) }
+    Box(modifier) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(c.surface)
+                .combinedClickable(onClick = onClick, onLongClick = { menu = true })
+                .padding(12.dp)
+                .heightIn(min = 64.dp),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Box(Modifier.size(32.dp).clip(RoundedCornerShape(9.dp)).background(accent.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+                Icon(taskIconByKey(f.icon) ?: Icons.Filled.Folder, contentDescription = null, tint = accent, modifier = Modifier.size(18.dp))
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(f.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("$count รายการ", style = MaterialTheme.typography.labelSmall, color = c.muted)
+        }
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            DropdownMenuItem(text = { Text("แก้ไข") }, onClick = { menu = false; onEdit() })
+            DropdownMenuItem(text = { Text("ย้าย") }, onClick = { menu = false; onMove() })
+            DropdownMenuItem(text = { Text("ลบ", color = MaterialTheme.colorScheme.error) }, onClick = { menu = false; onDelete() })
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun NoteRow(n: NoteEntity, folderName: String?, onClick: () -> Unit, onMove: () -> Unit, onDelete: () -> Unit) {
+    val c = AppTheme.colors
+    var menu by remember { mutableStateOf(false) }
+    val pdf = n.kind == "PDF"
+    Box {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .combinedClickable(onClick = onClick, onLongClick = { menu = true })
+                .padding(vertical = 10.dp, horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                Modifier.size(width = 40.dp, height = 46.dp).clip(RoundedCornerShape(8.dp)).background(if (pdf) Color(0xFF5A2A2A) else c.surface),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(if (pdf) Icons.Filled.PictureAsPdf else Icons.Filled.Description, contentDescription = null, tint = if (pdf) Color(0xFFFFB4A8) else c.ink, modifier = Modifier.size(20.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(n.title.ifBlank { "บันทึกไม่มีชื่อ" }, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val (done, total) = NoteDoc.checks(n.body)
+                val bits = listOfNotNull(
+                    folderName,
+                    if (pdf && n.pageCount > 0) "อ่านถึงหน้า ${n.lastPage + 1}/${n.pageCount}" else null,
+                    if (total > 0) "☑ $done/$total" else null,
+                    relativeTime(n.updatedAt)
+                )
+                Text(bits.joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            DropdownMenuItem(text = { Text("ย้าย") }, onClick = { menu = false; onMove() })
+            DropdownMenuItem(text = { Text("ลบ", color = MaterialTheme.colorScheme.error) }, onClick = { menu = false; onDelete() })
+        }
+    }
+}
+
+/** ไอคอนจากชุดเดียวกับกิจกรรม */
+fun taskIconByKey(key: String?) = TaskIcons.find(key)?.vector
+
+@Composable
+fun FolderDialog(initial: NoteFolderEntity?, onSave: (String, String?, String?) -> Unit, onDismiss: () -> Unit) {
+    val c = AppTheme.colors
+    var name by remember { mutableStateOf(initial?.name ?: "") }
+    var color by remember { mutableStateOf(initial?.color) }
+    var icon by remember { mutableStateOf(initial?.icon) }
+    var expanded by remember { mutableStateOf(false) }
+    val accent = TaskPalette.resolve(color, c.dark)?.first ?: c.ink
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = c.surface,
+        title = { Text(if (initial == null) "โฟลเดอร์ใหม่" else "แก้ไขโฟลเดอร์") },
+        text = {
+            Column(Modifier.heightIn(max = 520.dp).verticalScrollCompat()) {
+                OutlinedTextField(value = name, onValueChange = { name = it.take(40) }, singleLine = true, label = { Text("ชื่อโฟลเดอร์") }, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                ColorField(title = "สี", selected = color, defaultColor = c.ink, defaultLabel = "สีตัวหนังสือ", icon = taskIconByKey(icon) ?: Icons.Filled.Folder) { color = it }
+                Hint("ไอคอน", Modifier.padding(top = 8.dp, bottom = 6.dp))
+                val shown = if (expanded) TaskIcons.all else TaskIcons.all.take(15)
+                shown.chunked(5).forEach { row ->
+                    Row(Modifier.fillMaxWidth()) {
+                        row.forEach { item ->
+                            val sel = icon == item.key
+                            Box(
+                                Modifier.weight(1f).height(48.dp).clip(CircleShape)
+                                    .background(if (sel) accent.copy(alpha = 0.18f) else Color.Transparent)
+                                    .clickable { icon = if (sel) null else item.key }
+                                    .semantics { contentDescription = "ไอคอน${item.label}" },
+                                contentAlignment = Alignment.Center
+                            ) { Icon(item.vector, contentDescription = null, tint = if (sel) accent else c.muted) }
+                        }
+                        repeat(5 - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+                TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "แสดงน้อยลง" else "ไอคอนทั้งหมด") }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(name.trim(), color, icon) }, enabled = name.isNotBlank()) { Text("บันทึก") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ยกเลิก") } }
+    )
+}
+
+@Composable
+private fun Modifier.verticalScrollCompat() = this.then(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()))
+
+/** เลือกโฟลเดอร์ปลายทาง (แสดงเป็นลำดับชั้น) */
+@Composable
+fun MoveDialog(folders: List<NoteFolderEntity>, current: Long?, blocked: Set<Long>, onPick: (Long?) -> Unit, onDismiss: () -> Unit) {
+    val c = AppTheme.colors
+    val rows = remember(folders) {
+        val out = mutableListOf<Pair<NoteFolderEntity, Int>>()
+        fun add(parent: Long?, depth: Int) {
+            folders.filter { it.parentId == parent }.forEach { f -> out += f to depth; if (depth < 8) add(f.folderId, depth + 1) }
+        }
+        add(null, 0); out
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = c.surface,
+        title = { Text("ย้ายไปที่") },
+        text = {
+            LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                item {
+                    MoveRow("สมุด (ชั้นบนสุด)", Icons.Filled.Home, c.ink, 0, current == null, enabled = true) { onPick(null) }
+                }
+                items(rows, key = { it.first.folderId }) { (f, depth) ->
+                    MoveRow(f.name, taskIconByKey(f.icon) ?: Icons.Filled.Folder, folderAccent(f), depth + 1, current == f.folderId, enabled = f.folderId !in blocked) { onPick(f.folderId) }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("ยกเลิก") } }
+    )
+}
+
+@Composable
+private fun MoveRow(name: String, icon: androidx.compose.ui.graphics.vector.ImageVector, tint: Color, depth: Int, current: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val c = AppTheme.colors
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(10.dp))
+            .clickable(enabled = enabled && !current, onClick = onClick)
+            .padding(start = (depth * 16).dp, end = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = if (enabled) tint else c.line, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(name, color = if (enabled) c.ink else c.line, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (current) Text("อยู่ที่นี่", style = MaterialTheme.typography.labelSmall, color = c.muted)
+    }
+}

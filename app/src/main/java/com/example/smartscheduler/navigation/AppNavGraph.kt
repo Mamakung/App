@@ -3,6 +3,7 @@ package com.example.smartscheduler.navigation
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material3.Icon
@@ -53,6 +54,11 @@ object Routes {
     const val SETTINGS_APPEARANCE = "settings/appearance"
     const val SETTINGS_CATEGORIES = "settings/categories"
     const val SETTINGS_ALERTS = "settings/alerts"
+    const val NOTES = "notes"
+    const val NOTES_FOLDER = "notes/folder/{id}"
+    fun notesFolder(id: Long) = "notes/folder/$id"
+    const val NOTE = "notes/note/{id}?folder={folder}"
+    fun note(id: Long, folder: Long? = null) = "notes/note/$id?folder=${folder ?: -1}"
 }
 
 private data class TabItem(val route: String, val label: String, val icon: ImageVector)
@@ -60,6 +66,7 @@ private data class TabItem(val route: String, val label: String, val icon: Image
 private val tabs = listOf(
     TabItem(Routes.DASHBOARD, "ปฏิทิน", Icons.Filled.CalendarMonth),
     TabItem(Routes.ROUTINE, "กิจวัตร", Icons.Filled.Repeat),
+    TabItem(Routes.NOTES, "สมุด", Icons.Filled.EditNote),
     TabItem(Routes.SETTINGS, "ตั้งค่า", Icons.Filled.Settings)
 )
 
@@ -142,6 +149,31 @@ fun AppNavGraph(startDestination: String = Routes.AUTH, openUpdateOnStart: Boole
                     onOpenBatchAssign = { navController.navigate(Routes.BATCH_ASSIGN) },
                     onOpenImport = { navController.navigate(Routes.IMPORT) }
                 )
+            }
+            // ---------- สมุด ----------
+            composable(Routes.NOTES) {
+                com.example.smartscheduler.ui.screens.notes.NotebookScreen(
+                    onOpenFolder = { navController.navigate(Routes.notesFolder(it)) },
+                    onOpenNote = { navController.navigate(Routes.note(it)) },
+                    onNewNote = { navController.navigate(Routes.note(-1, it)) }
+                )
+            }
+            composable(Routes.NOTES_FOLDER, arguments = listOf(navArgument("id") { type = NavType.LongType })) {
+                com.example.smartscheduler.ui.screens.notes.NotebookScreen(
+                    onOpenFolder = { navController.navigate(Routes.notesFolder(it)) },
+                    onOpenNote = { navController.navigate(Routes.note(it)) },
+                    onNewNote = { navController.navigate(Routes.note(-1, it)) },
+                    onBack = { navController.popBackStack() }
+                )
+            }
+            composable(
+                Routes.NOTE,
+                arguments = listOf(
+                    navArgument("id") { type = NavType.LongType },
+                    navArgument("folder") { type = NavType.LongType; defaultValue = -1L }
+                )
+            ) {
+                com.example.smartscheduler.ui.screens.notes.NoteEditorScreen(onBack = { navController.popBackStack() })
             }
             composable(Routes.IMPORT) {
                 ImportScreen(
