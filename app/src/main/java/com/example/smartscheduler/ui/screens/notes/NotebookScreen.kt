@@ -51,8 +51,10 @@ data class NotebookState(
 @HiltViewModel
 class NotebookViewModel @Inject constructor(
     private val repo: NoteRepository,
+    settings: com.example.smartscheduler.settings.AppSettings,
     savedState: SavedStateHandle
 ) : ViewModel() {
+    val fabStyle = settings.fabStyle
     /** โฟลเดอร์ที่เปิดอยู่ (null = หน้าสมุด) */
     val folderId: Long? = savedState.get<Long>("id")?.takeIf { it >= 0 }
     private val query = MutableStateFlow("")
@@ -122,7 +124,6 @@ fun NotebookScreen(
     var deleteFolder by remember { mutableStateOf<NoteFolderEntity?>(null) }
     var deleteNote by remember { mutableStateOf<NoteEntity?>(null) }
     var moveTarget by remember { mutableStateOf<Any?>(null) }
-    var fabMenu by remember { mutableStateOf(false) }
     var topMenu by remember { mutableStateOf(false) }
 
     // ทางกลับไปหน้าสมุด เช่น สมุด › เรียน › เซนเซอร์
@@ -236,21 +237,32 @@ fun NotebookScreen(
             }
         }
 
-        // ปุ่ม + : บันทึกใหม่ / โฟลเดอร์ใหม่ / นำเข้า PDF (รอบหน้า)
-        Box(Modifier.align(Alignment.BottomEnd).padding(20.dp)) {
-            FloatingActionButton(
-                onClick = { fabMenu = !fabMenu },
-                containerColor = c.ink, contentColor = c.ground, shape = RoundedCornerShape(18.dp)
-            ) { Icon(if (fabMenu) Icons.Filled.Close else Icons.Filled.Add, contentDescription = "เพิ่ม") }
-            DropdownMenu(expanded = fabMenu, onDismissRequest = { fabMenu = false }) {
-                DropdownMenuItem(text = { Text("บันทึกใหม่") }, leadingIcon = { Icon(Icons.Filled.EditNote, null) }, onClick = { fabMenu = false; onNewNote(folderId) })
-                DropdownMenuItem(text = { Text("โฟลเดอร์ใหม่") }, leadingIcon = { Icon(Icons.Filled.CreateNewFolder, null) }, onClick = { fabMenu = false; newFolder = true })
-                DropdownMenuItem(
-                    text = { Column { Text("นำเข้า PDF"); Text("เร็วๆ นี้", style = MaterialTheme.typography.labelSmall, color = c.muted) } },
-                    leadingIcon = { Icon(Icons.Filled.PictureAsPdf, null) }, enabled = false, onClick = {}
+        // ปุ่ม + : เหมือนหน้าปฏิทิน (แตะ/กดค้างกางไอคอน, ลากไปปล่อยที่ไอคอน)
+        val fabStyle by viewModel.fabStyle.collectAsState()
+        val context = androidx.compose.ui.platform.LocalContext.current
+        AddMenuFab(
+            style = fabStyle,
+            actions = listOf(
+                AddMenuAction(
+                    label = "บันทึกใหม่",
+                    tint = { AppTheme.colors.work },
+                    icon = { tint -> Icon(Icons.Filled.EditNote, contentDescription = null, tint = tint, modifier = Modifier.size(26.dp)) },
+                    onClick = { onNewNote(folderId) }
+                ),
+                AddMenuAction(
+                    label = "โฟลเดอร์ใหม่",
+                    tint = { AppTheme.colors.rest },
+                    icon = { tint -> Icon(Icons.Filled.CreateNewFolder, contentDescription = null, tint = tint, modifier = Modifier.size(26.dp)) },
+                    onClick = { newFolder = true }
+                ),
+                AddMenuAction(
+                    label = "นำเข้า PDF",
+                    tint = { AppTheme.colors.task },
+                    icon = { tint -> Icon(Icons.Filled.PictureAsPdf, contentDescription = null, tint = tint, modifier = Modifier.size(26.dp)) },
+                    onClick = { android.widget.Toast.makeText(context, "นำเข้า PDF มาในอัปเดตถัดไป", android.widget.Toast.LENGTH_SHORT).show() }
                 )
-            }
-        }
+            )
+        )
     }
 
     // ---------- หน้าต่าง ----------
