@@ -67,13 +67,18 @@ class NotebookViewModel @Inject constructor(
 
     // ---------- นำเข้า PDF ----------
     suspend fun inspectPdf(uri: android.net.Uri) = repo.inspectPdf(uri)
-    private val _importProgress = MutableStateFlow<Float?>(null)
-    val importProgress: StateFlow<Float?> = _importProgress.asStateFlow()
-    fun importPdf(uri: android.net.Uri, title: String, folder: Long?, info: NoteRepository.PdfInfo, onDone: (Long?) -> Unit) = viewModelScope.launch {
-        _importProgress.value = 0f
-        val id = repo.importPdf(uri, title, folder, info) { _importProgress.value = it }
+    /** ความคืบหน้า: (ไฟล์ที่, จากทั้งหมด, สัดส่วนของไฟล์นั้น) */
+    private val _importProgress = MutableStateFlow<Triple<Int, Int, Float>?>(null)
+    val importProgress: StateFlow<Triple<Int, Int, Float>?> = _importProgress.asStateFlow()
+    /** นำเข้าทีละไฟล์ คืนรายการ id ที่สำเร็จ */
+    fun importPdfs(items: List<Triple<android.net.Uri, String, NoteRepository.PdfInfo>>, folder: Long?, onDone: (List<Long>, Int) -> Unit) = viewModelScope.launch {
+        val ok = mutableListOf<Long>()
+        items.forEachIndexed { i, (uri, title, info) ->
+            _importProgress.value = Triple(i + 1, items.size, 0f)
+            repo.importPdf(uri, title, folder, info) { _importProgress.value = Triple(i + 1, items.size, it) }?.let { ok += it }
+        }
         _importProgress.value = null
-        onDone(id)
+        onDone(ok, items.size - ok.size)
     }
     fun saveFolder(f: NoteFolderEntity, onSaved: (Long) -> Unit = {}) = viewModelScope.launch { onSaved(repo.saveFolder(f)) }
     fun deleteFolder(id: Long) = viewModelScope.launch { repo.deleteFolder(id) }
@@ -139,12 +144,11 @@ fun NotebookScreen(
     var topMenu by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
-    var pdfPending by remember { mutableStateOf<Pair<android.net.Uri, NoteRepository.PdfInfo>?>(null) }
-    val pickPdf = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) scope.launch {
-            val info = viewModel.inspectPdf(uri)
-            if (info == null) android.widget.Toast.makeText(context, "เปิดไฟล์นี้ไม่ได้ อาจไม่ใช่ PDF หรือมีรหัสผ่าน", android.widget.Toast.LENGTH_LONG).show()
-            else pdfPending = uri to info
+    // ไฟล์ที่เลือกมา: (uri, info ที่อ่านได้ หรือ null = เปิดไม่ได้)
+    var pdfPending by remember { mutableStateOf<List<Pair<android.net.Uri, NoteRepository.PdfInfo?>>?>(null) }
+    val pickPdf = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) scope.launch {
+            pdfPending = uris.distinct().map { it to viewModel.inspectPdf(it) }
         }
     }
 
@@ -287,15 +291,25 @@ fun NotebookScreen(
     }
 
     // ---------- หน้าต่าง ----------
-    pdfPending?.let { (uri, info) ->
+    pdfPending?.let { files ->
         val progress by viewModel.importProgress.collectAsState()
         ImportPdfDialog(
-            info = info, folders = s.folders, initialFolder = folderId, progress = progress,
-            onImport = { title, folder ->
-                viewModel.importPdf(uri, title, folder, info) { id ->
+            files = files, folders = s.folders, initialFolder = folderId, progress = progress,
+            onImport = { items, folder ->
+                viewModel.importPdfs(items, folder) { ids, failed ->
                     pdfPending = null
-                    if (id == null) android.widget.Toast.makeText(context, "นำเข้าไม่สำเร็จ", android.widget.Toast.LENGTH_SHORT).show()
-                    else onOpenPdf(id)
+                    when {
+                        ids.isEmpty() -> android.widget.Toast.makeText(context, "นำเข้าไม่สำเร็จ", android.widget.Toast.LENGTH_SHORT).show()
+                        ids.size == 1 && failed == 0 -> onOpenPdf(ids.first())
+                        else -> {
+                            android.widget.Toast.makeText(
+                                context,
+                                "นำเข้าแล้ว ${ids.size} ไฟล์" + if (failed > 0) " (ไม่สำเร็จ $failed)" else "",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                            if (folder != null && folder != folderId) onOpenFolder(folder)
+                        }
+                    }
                 }
             },
             onDismiss = { if (progress == null) pdfPending = null }
@@ -520,39 +534,66 @@ private fun MoveRow(name: String, icon: androidx.compose.ui.graphics.vector.Imag
 }
 
 
-/** แผ่นนำเข้า PDF: ชื่อ + โฟลเดอร์ + ความคืบหน้าตอนคัดลอก */
+/** แผ่นนำเข้า PDF (หลายไฟล์): ติ๊กเลือก/แก้ชื่อ + โฟลเดอร์เดียวสำหรับทุกไฟล์ + ความคืบหน้า */
 @Composable
 private fun ImportPdfDialog(
-    info: NoteRepository.PdfInfo,
+    files: List<Pair<android.net.Uri, NoteRepository.PdfInfo?>>,
     folders: List<NoteFolderEntity>,
     initialFolder: Long?,
-    progress: Float?,
-    onImport: (String, Long?) -> Unit,
+    progress: Triple<Int, Int, Float>?,
+    onImport: (List<Triple<android.net.Uri, String, NoteRepository.PdfInfo>>, Long?) -> Unit,
     onDismiss: () -> Unit
 ) {
     val c = AppTheme.colors
-    var name by remember { mutableStateOf(info.name.removeSuffix(".pdf").removeSuffix(".PDF")) }
+    val names = remember { mutableStateListOf(*files.map { (_, i) -> (i?.name ?: "").removeSuffix(".pdf").removeSuffix(".PDF") }.toTypedArray()) }
+    val checked = remember { mutableStateListOf(*files.map { it.second != null }.toTypedArray()) }
+    var editing by remember { mutableStateOf<Int?>(null) }
     var folder by remember { mutableStateOf(initialFolder) }
     var picking by remember { mutableStateOf(false) }
     val busy = progress != null
+    val count = files.indices.count { checked[it] && files[it].second != null }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = c.surface,
-        title = { Text("นำเข้า PDF") },
+        title = { Text(if (files.size == 1) "นำเข้า PDF" else "นำเข้า PDF ${files.size} ไฟล์") },
         text = {
             Column {
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.ground).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(width = 40.dp, height = 46.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF5A2A2A)), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Filled.PictureAsPdf, contentDescription = null, tint = Color(0xFFFFB4A8))
-                    }
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(info.name, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text("${info.pages} หน้า" + if (info.size > 0) " · %.1f MB".format(info.size / 1_000_000.0) else "", style = MaterialTheme.typography.labelSmall, color = c.muted)
+                LazyColumn(Modifier.heightIn(max = 300.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    itemsIndexedCompat(files) { i, (_, info) ->
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.ground).padding(start = 2.dp, end = 10.dp, top = 6.dp, bottom = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (files.size > 1) Checkbox(checked = checked[i] && info != null, onCheckedChange = { checked[i] = it }, enabled = info != null && !busy)
+                            else Spacer(Modifier.width(8.dp))
+                            Box(Modifier.size(width = 34.dp, height = 40.dp).clip(RoundedCornerShape(7.dp)).background(Color(0xFF5A2A2A)), contentAlignment = Alignment.Center) {
+                                Icon(Icons.Filled.PictureAsPdf, contentDescription = null, tint = Color(0xFFFFB4A8), modifier = Modifier.size(18.dp))
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                if (editing == i) {
+                                    OutlinedTextField(
+                                        value = names[i], onValueChange = { names[i] = it.take(120) }, singleLine = true,
+                                        textStyle = MaterialTheme.typography.bodyMedium, modifier = Modifier.fillMaxWidth(),
+                                        trailingIcon = { IconButton(onClick = { editing = null }) { Icon(Icons.Filled.Check, contentDescription = "เสร็จ") } }
+                                    )
+                                } else {
+                                    Text(
+                                        if (info == null) "ไฟล์ที่ ${i + 1}" else names[i].ifBlank { info.name },
+                                        style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.clickable(enabled = info != null && !busy) { editing = i }
+                                    )
+                                }
+                                Text(
+                                    if (info == null) "เปิดไม่ได้ (อาจมีรหัสผ่านหรือไฟล์เสีย) จะข้าม"
+                                    else "${info.pages} หน้า" + (if (info.size > 0) " · %.1f MB".format(info.size / 1_000_000.0) else "") + if (editing != i) " · แตะชื่อเพื่อแก้" else "",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (info == null) MaterialTheme.colorScheme.error else c.muted
+                                )
+                            }
+                        }
                     }
                 }
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(value = name, onValueChange = { name = it.take(120) }, singleLine = true, enabled = !busy, label = { Text("ชื่อ") }, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(8.dp))
                 val f = folders.firstOrNull { it.folderId == folder }
                 Row(
@@ -562,19 +603,38 @@ private fun ImportPdfDialog(
                     Icon(taskIconByKey(f?.icon) ?: if (f == null) Icons.Filled.Home else Icons.Filled.Folder, contentDescription = null, tint = folderAccent(f), modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("เก็บในโฟลเดอร์", style = MaterialTheme.typography.labelSmall, color = c.muted)
+                        Text(if (files.size > 1) "เก็บทุกไฟล์ในโฟลเดอร์" else "เก็บในโฟลเดอร์", style = MaterialTheme.typography.labelSmall, color = c.muted)
                         Text(f?.name ?: "สมุด (ชั้นบนสุด)", style = MaterialTheme.typography.bodyMedium)
                     }
                     Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = c.muted)
                 }
                 if (progress != null) {
-                    LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp), color = c.task)
-                    Text("กำลังคัดลอก ${(progress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, color = c.muted, modifier = Modifier.padding(top = 4.dp))
+                    val (n, total, frac) = progress
+                    LinearProgressIndicator(progress = { ((n - 1) + frac) / total }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp), color = c.task)
+                    Text(
+                        (if (total > 1) "ไฟล์ $n จาก $total · " else "กำลังคัดลอก ") + "${(((n - 1) + frac) / total * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelSmall, color = c.muted, modifier = Modifier.padding(top = 4.dp)
+                    )
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onImport(name.trim().ifBlank { info.name }, folder) }, enabled = !busy) { Text("นำเข้า") } },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val items = files.indices.filter { checked[it] }.mapNotNull { i ->
+                        val info = files[i].second ?: return@mapNotNull null
+                        Triple(files[i].first, names[i].trim().ifBlank { info.name.removeSuffix(".pdf") }, info)
+                    }
+                    onImport(items, folder)
+                },
+                enabled = !busy && count > 0
+            ) { Text(if (count > 1) "นำเข้า $count ไฟล์" else "นำเข้า") }
+        },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("ยกเลิก") } }
     )
     if (picking) MoveDialog(folders = folders, current = folder, blocked = emptySet(), onPick = { folder = it; picking = false }, onDismiss = { picking = false })
 }
+
+private fun <T> androidx.compose.foundation.lazy.LazyListScope.itemsIndexedCompat(
+    list: List<T>, content: @Composable androidx.compose.foundation.lazy.LazyItemScope.(Int, T) -> Unit
+) = items(list.size) { i -> content(i, list[i]) }
