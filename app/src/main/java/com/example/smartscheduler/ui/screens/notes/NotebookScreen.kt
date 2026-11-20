@@ -2,6 +2,7 @@ package com.example.smartscheduler.ui.screens.notes
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -83,6 +84,12 @@ class NotebookViewModel @Inject constructor(
     fun saveFolder(f: NoteFolderEntity, onSaved: (Long) -> Unit = {}) = viewModelScope.launch { onSaved(repo.saveFolder(f)) }
     fun deleteFolder(id: Long) = viewModelScope.launch { repo.deleteFolder(id) }
     fun deleteNote(id: Long) = viewModelScope.launch { repo.deleteNote(id) }
+    fun deleteMany(notes: Set<Long>, folders: Set<Long>) = viewModelScope.launch {
+        notes.forEach { repo.deleteNote(it) }; folders.forEach { repo.deleteFolder(it) }
+    }
+    fun moveMany(notes: Set<Long>, folders: Set<Long>, to: Long?) = viewModelScope.launch {
+        notes.forEach { repo.moveNote(it, to) }; folders.forEach { repo.moveFolder(it, to) }
+    }
     fun moveNote(id: Long, to: Long?) = viewModelScope.launch { repo.moveNote(id, to) }
     fun moveFolder(id: Long, to: Long?) = viewModelScope.launch { repo.moveFolder(id, to) }
 }
@@ -141,6 +148,16 @@ fun NotebookScreen(
     var deleteFolder by remember { mutableStateOf<NoteFolderEntity?>(null) }
     var deleteNote by remember { mutableStateOf<NoteEntity?>(null) }
     var moveTarget by remember { mutableStateOf<Any?>(null) }
+    // โหมดเลือกหลายรายการ (กดค้างเพื่อเริ่ม)
+    var selNotes by remember { mutableStateOf(setOf<Long>()) }
+    var selFolders by remember { mutableStateOf(setOf<Long>()) }
+    val selecting = selNotes.isNotEmpty() || selFolders.isNotEmpty()
+    var bulkDelete by remember { mutableStateOf(false) }
+    var bulkMove by remember { mutableStateOf(false) }
+    fun clearSel() { selNotes = emptySet(); selFolders = emptySet() }
+    fun toggleNote(id: Long) { selNotes = if (id in selNotes) selNotes - id else selNotes + id }
+    fun toggleFolder(id: Long) { selFolders = if (id in selFolders) selFolders - id else selFolders + id }
+    androidx.activity.compose.BackHandler(enabled = selecting) { clearSel() }
     var topMenu by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
@@ -177,7 +194,16 @@ fun NotebookScreen(
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 110.dp)
         ) {
             item {
-                if (onBack == null) {
+                if (selecting) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 6.dp)) {
+                        IconButton(onClick = { clearSel() }) { Icon(Icons.Filled.Close, contentDescription = "ยกเลิกการเลือก") }
+                        Text("เลือก ${selNotes.size + selFolders.size} รายการ", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        TextButton(onClick = {
+                            selFolders = subFolders.map { it.folderId }.toSet()
+                            selNotes = (recent + items).map { it.noteId }.toSet()
+                        }) { Text("เลือกทั้งหมด") }
+                    }
+                } else if (onBack == null) {
                     Text("สมุด", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 12.dp))
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
@@ -226,8 +252,9 @@ fun NotebookScreen(
                         row.forEach { f ->
                             FolderCard(
                                 f, countIn(s, f.folderId), Modifier.weight(1f),
-                                onClick = { onOpenFolder(f.folderId) },
-                                onEdit = { editFolder = f }, onMove = { moveTarget = f }, onDelete = { deleteFolder = f }
+                                selected = f.folderId in selFolders,
+                                onClick = { if (selecting) toggleFolder(f.folderId) else onOpenFolder(f.folderId) },
+                                onLongClick = { toggleFolder(f.folderId) }
                             )
                         }
                         if (row.size == 1) Spacer(Modifier.weight(1f))
@@ -238,7 +265,7 @@ fun NotebookScreen(
             if (recent.isNotEmpty()) {
                 item { Hint("ล่าสุด", Modifier.padding(top = 14.dp, bottom = 4.dp)) }
                 items(recent, key = { "r" + it.noteId }) { n ->
-                    NoteRow(n, s.folders.firstOrNull { it.folderId == n.folderId }?.name, onClick = { if (n.kind == "PDF") onOpenPdf(n.noteId) else onOpenNote(n.noteId) }, onMove = { moveTarget = n }, onDelete = { deleteNote = n })
+                    NoteRow(n, s.folders.firstOrNull { it.folderId == n.folderId }?.name, selected = n.noteId in selNotes, onClick = { if (selecting) toggleNote(n.noteId) else if (n.kind == "PDF") onOpenPdf(n.noteId) else onOpenNote(n.noteId) }, onLongClick = { toggleNote(n.noteId) })
                 }
             }
 
@@ -246,7 +273,7 @@ fun NotebookScreen(
             if (listItems.isNotEmpty()) {
                 item { Hint(if (searching) "บันทึก" else if (folderId == null) "ไม่มีโฟลเดอร์" else "รายการ", Modifier.padding(top = 14.dp, bottom = 4.dp)) }
                 items(listItems, key = { "n" + it.noteId }) { n ->
-                    NoteRow(n, if (searching) s.folders.firstOrNull { it.folderId == n.folderId }?.name else null, onClick = { if (n.kind == "PDF") onOpenPdf(n.noteId) else onOpenNote(n.noteId) }, onMove = { moveTarget = n }, onDelete = { deleteNote = n })
+                    NoteRow(n, if (searching) s.folders.firstOrNull { it.folderId == n.folderId }?.name else null, selected = n.noteId in selNotes, onClick = { if (selecting) toggleNote(n.noteId) else if (n.kind == "PDF") onOpenPdf(n.noteId) else onOpenNote(n.noteId) }, onLongClick = { toggleNote(n.noteId) })
                 }
             }
 
@@ -263,9 +290,20 @@ fun NotebookScreen(
             }
         }
 
+        // โหมดเลือก: แถบ ย้าย / ลบ แทนปุ่ม +
+        if (selecting) {
+            Row(
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(c.surface).padding(vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                BulkAction(Icons.Filled.DriveFileMove, "ย้าย", c.ink) { bulkMove = true }
+                BulkAction(Icons.Filled.Delete, "ลบ", MaterialTheme.colorScheme.error) { bulkDelete = true }
+            }
+        }
+
         // ปุ่ม + : เหมือนหน้าปฏิทิน (แตะ/กดค้างกางไอคอน, ลากไปปล่อยที่ไอคอน)
         val fabStyle by viewModel.fabStyle.collectAsState()
-        AddMenuFab(
+        if (!selecting) AddMenuFab(
             style = fabStyle,
             actions = listOf(
                 AddMenuAction(
@@ -291,6 +329,26 @@ fun NotebookScreen(
     }
 
     // ---------- หน้าต่าง ----------
+    if (bulkDelete) {
+        val inside = selFolders.flatMap { descendants(s.folders, it) }.toSet()
+        val extra = s.notes.count { it.folderId in inside && it.noteId !in selNotes } + (inside.size - selFolders.size)
+        ConfirmDeleteDialog(
+            title = "ลบ ${selNotes.size + selFolders.size} รายการ",
+            message = (if (selFolders.isNotEmpty() && extra > 0) "รวมของในโฟลเดอร์ที่เลือกอีก $extra รายการ " else "") + "ลบแล้วย้อนกลับไม่ได้",
+            confirmText = "ลบ",
+            onConfirm = { viewModel.deleteMany(selNotes, selFolders); bulkDelete = false; clearSel() },
+            onDismiss = { bulkDelete = false }
+        )
+    }
+    if (bulkMove) {
+        MoveDialog(
+            folders = s.folders,
+            current = null,
+            blocked = selFolders.flatMap { descendants(s.folders, it) }.toSet(),
+            onPick = { to -> viewModel.moveMany(selNotes, selFolders, to); bulkMove = false; clearSel() },
+            onDismiss = { bulkMove = false }
+        )
+    }
     pdfPending?.let { files ->
         val progress by viewModel.importProgress.collectAsState()
         ImportPdfDialog(
@@ -367,49 +425,64 @@ fun NotebookScreen(
 @Composable
 private fun FolderCard(
     f: NoteFolderEntity, count: Int, modifier: Modifier,
-    onClick: () -> Unit, onEdit: () -> Unit, onMove: () -> Unit, onDelete: () -> Unit
+    selected: Boolean, onClick: () -> Unit, onLongClick: () -> Unit
 ) {
     val c = AppTheme.colors
     val accent = folderAccent(f)
-    var menu by remember { mutableStateOf(false) }
-    Box(modifier) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(c.surface)
-                .combinedClickable(onClick = onClick, onLongClick = { menu = true })
-                .padding(12.dp)
-                .heightIn(min = 64.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
+    Column(
+        modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (selected) c.now.copy(alpha = 0.22f) else c.surface)
+            .then(if (selected) Modifier.border(2.dp, c.now, RoundedCornerShape(16.dp)) else Modifier)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(12.dp)
+            .heightIn(min = 64.dp),
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Box {
             Box(Modifier.size(32.dp).clip(RoundedCornerShape(9.dp)).background(accent.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
                 Icon(taskIconByKey(f.icon) ?: Icons.Filled.Folder, contentDescription = null, tint = accent, modifier = Modifier.size(18.dp))
             }
-            Spacer(Modifier.height(8.dp))
-            Text(f.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("$count รายการ", style = MaterialTheme.typography.labelSmall, color = c.muted)
+            if (selected) SelCheck(Modifier.align(Alignment.BottomEnd).offset(x = 6.dp, y = 6.dp))
         }
-        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-            DropdownMenuItem(text = { Text("แก้ไข") }, onClick = { menu = false; onEdit() })
-            DropdownMenuItem(text = { Text("ย้าย") }, onClick = { menu = false; onMove() })
-            DropdownMenuItem(text = { Text("ลบ", color = MaterialTheme.colorScheme.error) }, onClick = { menu = false; onDelete() })
-        }
+        Spacer(Modifier.height(8.dp))
+        Text(f.name, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text("$count รายการ", style = MaterialTheme.typography.labelSmall, color = c.muted)
+    }
+}
+
+@Composable
+private fun SelCheck(modifier: Modifier) {
+    val c = AppTheme.colors
+    Box(
+        modifier.size(22.dp).clip(CircleShape).background(c.ground).padding(2.dp).clip(CircleShape).background(c.now),
+        contentAlignment = Alignment.Center
+    ) { Icon(Icons.Filled.Check, contentDescription = "เลือกแล้ว", tint = c.ground, modifier = Modifier.size(14.dp)) }
+}
+
+@Composable
+private fun BulkAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, tint: Color, onClick: () -> Unit) {
+    Column(
+        Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(horizontal = 28.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(icon, contentDescription = null, tint = tint)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = tint)
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun NoteRow(n: NoteEntity, folderName: String?, onClick: () -> Unit, onMove: () -> Unit, onDelete: () -> Unit) {
+private fun NoteRow(n: NoteEntity, folderName: String?, selected: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
     val c = AppTheme.colors
-    var menu by remember { mutableStateOf(false) }
     val pdf = n.kind == "PDF"
     Box {
         Row(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .combinedClickable(onClick = onClick, onLongClick = { menu = true })
+                .background(if (selected) c.now.copy(alpha = 0.18f) else Color.Transparent)
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
                 .padding(vertical = 10.dp, horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -418,6 +491,7 @@ private fun NoteRow(n: NoteEntity, folderName: String?, onClick: () -> Unit, onM
                 contentAlignment = Alignment.Center
             ) {
                 Icon(if (pdf) Icons.Filled.PictureAsPdf else Icons.Filled.Description, contentDescription = null, tint = if (pdf) Color(0xFFFFB4A8) else c.ink, modifier = Modifier.size(20.dp))
+                if (selected) SelCheck(Modifier.align(Alignment.BottomEnd).offset(x = 6.dp, y = 6.dp))
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
@@ -431,10 +505,6 @@ private fun NoteRow(n: NoteEntity, folderName: String?, onClick: () -> Unit, onM
                 )
                 Text(bits.joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-        }
-        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-            DropdownMenuItem(text = { Text("ย้าย") }, onClick = { menu = false; onMove() })
-            DropdownMenuItem(text = { Text("ลบ", color = MaterialTheme.colorScheme.error) }, onClick = { menu = false; onDelete() })
         }
     }
 }
