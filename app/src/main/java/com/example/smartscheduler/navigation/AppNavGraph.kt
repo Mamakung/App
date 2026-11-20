@@ -58,6 +58,8 @@ object Routes {
     const val NOTES_FOLDER = "notes/folder/{id}"
     fun notesFolder(id: Long) = "notes/folder/$id"
     const val NOTE = "notes/note/{id}?folder={folder}"
+    const val PDF = "notes/pdf/{id}"
+    fun pdf(id: Long) = "notes/pdf/$id"
     fun note(id: Long, folder: Long? = null) = "notes/note/$id?folder=${folder ?: -1}"
 }
 
@@ -155,6 +157,7 @@ fun AppNavGraph(startDestination: String = Routes.AUTH, openUpdateOnStart: Boole
                 com.example.smartscheduler.ui.screens.notes.NotebookScreen(
                     onOpenFolder = { navController.navigate(Routes.notesFolder(it)) },
                     onOpenNote = { navController.navigate(Routes.note(it)) },
+                    onOpenPdf = { navController.navigate(Routes.pdf(it)) },
                     onNewNote = { navController.navigate(Routes.note(-1, it)) }
                 )
             }
@@ -162,6 +165,7 @@ fun AppNavGraph(startDestination: String = Routes.AUTH, openUpdateOnStart: Boole
                 com.example.smartscheduler.ui.screens.notes.NotebookScreen(
                     onOpenFolder = { navController.navigate(Routes.notesFolder(it)) },
                     onOpenNote = { navController.navigate(Routes.note(it)) },
+                    onOpenPdf = { navController.navigate(Routes.pdf(it)) },
                     onNewNote = { navController.navigate(Routes.note(-1, it)) },
                     onBack = { navController.popBackStack() }
                 )
@@ -174,6 +178,9 @@ fun AppNavGraph(startDestination: String = Routes.AUTH, openUpdateOnStart: Boole
                 )
             ) {
                 com.example.smartscheduler.ui.screens.notes.NoteEditorScreen(onBack = { navController.popBackStack() })
+            }
+            composable(Routes.PDF, arguments = listOf(navArgument("id") { type = NavType.LongType })) {
+                com.example.smartscheduler.ui.screens.notes.PdfReaderScreen(onBack = { navController.popBackStack() })
             }
             composable(Routes.IMPORT) {
                 ImportScreen(

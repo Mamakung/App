@@ -133,6 +133,54 @@ class NoteRepository @Inject constructor(
         dao.deleteFolders(ids.toList())
     }
 
+    // ---------- PDF ----------
+
+    data class PdfInfo(val name: String, val size: Long, val pages: Int)
+
+    /** อ่านชื่อ ขนาด และจำนวนหน้าของไฟล์ก่อนนำเข้า (null = ไม่ใช่ PDF ที่เปิดได้) */
+    suspend fun inspectPdf(uri: Uri): PdfInfo? = withContext(Dispatchers.IO) {
+        runCatching {
+            val cr = context.contentResolver
+            var name = "เอกสาร.pdf"
+            var size = 0L
+            cr.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { c ->
+                if (c.moveToFirst()) { name = c.getString(0) ?: name; size = if (c.isNull(1)) 0 else c.getLong(1) }
+            }
+            val pages = cr.openFileDescriptor(uri, "r")!!.use { fd -> android.graphics.pdf.PdfRenderer(fd).use { it.pageCount } }
+            PdfInfo(name, size, pages)
+        }.getOrNull()
+    }
+
+    /** คัดลอก PDF เข้ามาเก็บในสมุด คืน noteId (null = ไม่สำเร็จ) */
+    suspend fun importPdf(uri: Uri, title: String, folderId: Long?, info: PdfInfo, onProgress: (Float) -> Unit): Long? {
+        val id = dao.upsertNote(NoteEntity(ownerUid = uid, folderId = folderId, kind = "PDF", title = title, pageCount = info.pages))
+        val ok = withContext(Dispatchers.IO) {
+            runCatching {
+                val dir = noteDir(id).apply { mkdirs() }
+                val target = File(dir, "doc.pdf")
+                context.contentResolver.openInputStream(uri)!!.use { input ->
+                    target.outputStream().use { out ->
+                        val buf = ByteArray(64 * 1024)
+                        var done = 0L
+                        while (true) {
+                            val n = input.read(buf)
+                            if (n < 0) break
+                            out.write(buf, 0, n)
+                            done += n
+                            if (info.size > 0) onProgress((done.toFloat() / info.size).coerceAtMost(1f))
+                        }
+                    }
+                }
+                true
+            }.getOrDefault(false)
+        }
+        if (!ok) { deleteNote(id); return null }
+        dao.upsertNote(NoteEntity(noteId = id, ownerUid = uid, folderId = folderId, kind = "PDF", title = title, filePath = "notes/$id/doc.pdf", pageCount = info.pages))
+        return id
+    }
+
+    suspend fun setLastPage(id: Long, page: Int) = dao.setLastPage(id, page)
+
     // ---------- ไฟล์แนบ (เก็บใน filesDir/notes/<noteId>/) ----------
 
     fun noteDir(noteId: Long) = File(context.filesDir, "notes/$noteId")

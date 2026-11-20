@@ -375,10 +375,50 @@ fun BatchAssignScreen(onBack: () -> Unit, viewModel: BatchAssignViewModel = hilt
                       }
                     }
                 }
-                // เพิ่มด่วน: แตะ = เพิ่มเลย (ชื่อหมวด + เวลาล่าสุด) / กดค้าง = แก้ก่อนเพิ่ม
-                Hint("แตะ = เพิ่มเลย · กดค้าง = แก้ก่อนเพิ่ม", Modifier.padding(bottom = 8.dp))
+                // พิมพ์ชื่อได้เลย: + แตะหมวด = ชื่อนี้ในหมวดนั้น / กดเพิ่ม = หมวด "กิจกรรม"
+                val lastEnd = state.tasks.maxOfOrNull { it.endMin }
+                var quickName by remember { mutableStateOf("") }
+                var qStart by remember { mutableStateOf(minOf(lastEnd ?: ((java.time.LocalTime.now().hour + 1) * 60), 23 * 60)) }
+                var qEnd by remember { mutableStateOf(minOf(qStart + 60, 23 * 60 + 59)) }
+                fun addNamed(k: TaskKind, cat: com.example.smartscheduler.data.local.entity.CategoryEntity?) {
+                    val base = quickDraftOf(quick, k, cat, lastEnd)
+                    val d = base.copy(title = quickName.trim(), startMin = qStart, endMin = if (qEnd > qStart) qEnd else minOf(qStart + 60, 23 * 60 + 59))
+                    viewModel.saveTask(null, d)
+                    quick.record(com.example.smartscheduler.settings.QuickStore.keyFor(k.code, cat?.categoryId), d.startMin, d.endMin)
+                    quickName = ""
+                    // อันถัดไปเริ่มต่อจากอันนี้
+                    qStart = minOf(d.endMin, 23 * 60); qEnd = minOf(qStart + 60, 23 * 60 + 59)
+                }
+                OutlinedTextField(
+                    value = quickName,
+                    onValueChange = { quickName = it.take(80) },
+                    placeholder = { Text("พิมพ์ชื่อกิจกรรม…") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { if (quickName.isNotBlank()) addNamed(TaskKind.TASK, null) }),
+                    trailingIcon = {
+                        Button(
+                            onClick = { addNamed(TaskKind.TASK, null) },
+                            enabled = quickName.isNotBlank(),
+                            modifier = Modifier.padding(end = 6.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp)
+                        ) { Text("เพิ่ม") }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TimeButton("เริ่ม", qStart, Modifier.weight(1f)) { qStart = it; if (qEnd <= it) qEnd = minOf(it + 60, 23 * 60 + 59) }
+                    TimeButton("สิ้นสุด", qEnd, Modifier.weight(1f)) { qEnd = it }
+                }
+                Hint(
+                    if (quickName.isNotBlank()) "แตะหมวด = \"${quickName.trim()}\" ในหมวดนั้น · กดเพิ่ม = หมวดกิจกรรม"
+                    else "แตะหมวด = เพิ่มเลย · กดค้าง = แก้ก่อนเพิ่ม",
+                    Modifier.padding(top = 6.dp, bottom = 8.dp)
+                )
                 QuickAddGrid(
                     onAdd = { k, cat ->
+                        if (quickName.isNotBlank()) { addNamed(k, cat); return@QuickAddGrid }
                         val d = quickDraftOf(quick, k, cat, lastEnd = state.tasks.maxOfOrNull { it.endMin })
                         viewModel.saveTask(null, d)
                         quick.record(com.example.smartscheduler.settings.QuickStore.keyFor(k.code, cat?.categoryId), d.startMin, d.endMin)

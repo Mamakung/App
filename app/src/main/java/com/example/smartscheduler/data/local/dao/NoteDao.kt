@@ -34,6 +34,9 @@ interface NoteDao {
     @Query("UPDATE note_folders SET parentId = :parentId WHERE folderId = :folderId")
     suspend fun moveFolder(folderId: Long, parentId: Long?)
 
+    @Query("UPDATE notes SET lastPage = :page WHERE noteId = :id")
+    suspend fun setLastPage(id: Long, page: Int)
+
     @Query("DELETE FROM notes WHERE noteId = :id")
     suspend fun deleteNote(id: Long)
 

@@ -64,6 +64,17 @@ class NotebookViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NotebookState())
 
     fun setQuery(q: String) { query.value = q }
+
+    // ---------- นำเข้า PDF ----------
+    suspend fun inspectPdf(uri: android.net.Uri) = repo.inspectPdf(uri)
+    private val _importProgress = MutableStateFlow<Float?>(null)
+    val importProgress: StateFlow<Float?> = _importProgress.asStateFlow()
+    fun importPdf(uri: android.net.Uri, title: String, folder: Long?, info: NoteRepository.PdfInfo, onDone: (Long?) -> Unit) = viewModelScope.launch {
+        _importProgress.value = 0f
+        val id = repo.importPdf(uri, title, folder, info) { _importProgress.value = it }
+        _importProgress.value = null
+        onDone(id)
+    }
     fun saveFolder(f: NoteFolderEntity, onSaved: (Long) -> Unit = {}) = viewModelScope.launch { onSaved(repo.saveFolder(f)) }
     fun deleteFolder(id: Long) = viewModelScope.launch { repo.deleteFolder(id) }
     fun deleteNote(id: Long) = viewModelScope.launch { repo.deleteNote(id) }
@@ -111,6 +122,7 @@ fun folderAccent(f: NoteFolderEntity?): Color =
 fun NotebookScreen(
     onOpenFolder: (Long) -> Unit,
     onOpenNote: (Long) -> Unit,
+    onOpenPdf: (Long) -> Unit,
     onNewNote: (Long?) -> Unit,
     onBack: (() -> Unit)? = null,
     viewModel: NotebookViewModel = hiltViewModel()
@@ -125,6 +137,16 @@ fun NotebookScreen(
     var deleteNote by remember { mutableStateOf<NoteEntity?>(null) }
     var moveTarget by remember { mutableStateOf<Any?>(null) }
     var topMenu by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    var pdfPending by remember { mutableStateOf<Pair<android.net.Uri, NoteRepository.PdfInfo>?>(null) }
+    val pickPdf = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            val info = viewModel.inspectPdf(uri)
+            if (info == null) android.widget.Toast.makeText(context, "เปิดไฟล์นี้ไม่ได้ อาจไม่ใช่ PDF หรือมีรหัสผ่าน", android.widget.Toast.LENGTH_LONG).show()
+            else pdfPending = uri to info
+        }
+    }
 
     // ทางกลับไปหน้าสมุด เช่น สมุด › เรียน › เซนเซอร์
     val path = remember(s.folders, folderId) {
@@ -212,7 +234,7 @@ fun NotebookScreen(
             if (recent.isNotEmpty()) {
                 item { Hint("ล่าสุด", Modifier.padding(top = 14.dp, bottom = 4.dp)) }
                 items(recent, key = { "r" + it.noteId }) { n ->
-                    NoteRow(n, s.folders.firstOrNull { it.folderId == n.folderId }?.name, onClick = { onOpenNote(n.noteId) }, onMove = { moveTarget = n }, onDelete = { deleteNote = n })
+                    NoteRow(n, s.folders.firstOrNull { it.folderId == n.folderId }?.name, onClick = { if (n.kind == "PDF") onOpenPdf(n.noteId) else onOpenNote(n.noteId) }, onMove = { moveTarget = n }, onDelete = { deleteNote = n })
                 }
             }
 
@@ -220,7 +242,7 @@ fun NotebookScreen(
             if (listItems.isNotEmpty()) {
                 item { Hint(if (searching) "บันทึก" else if (folderId == null) "ไม่มีโฟลเดอร์" else "รายการ", Modifier.padding(top = 14.dp, bottom = 4.dp)) }
                 items(listItems, key = { "n" + it.noteId }) { n ->
-                    NoteRow(n, if (searching) s.folders.firstOrNull { it.folderId == n.folderId }?.name else null, onClick = { onOpenNote(n.noteId) }, onMove = { moveTarget = n }, onDelete = { deleteNote = n })
+                    NoteRow(n, if (searching) s.folders.firstOrNull { it.folderId == n.folderId }?.name else null, onClick = { if (n.kind == "PDF") onOpenPdf(n.noteId) else onOpenNote(n.noteId) }, onMove = { moveTarget = n }, onDelete = { deleteNote = n })
                 }
             }
 
@@ -239,7 +261,6 @@ fun NotebookScreen(
 
         // ปุ่ม + : เหมือนหน้าปฏิทิน (แตะ/กดค้างกางไอคอน, ลากไปปล่อยที่ไอคอน)
         val fabStyle by viewModel.fabStyle.collectAsState()
-        val context = androidx.compose.ui.platform.LocalContext.current
         AddMenuFab(
             style = fabStyle,
             actions = listOf(
@@ -259,13 +280,27 @@ fun NotebookScreen(
                     label = "นำเข้า PDF",
                     tint = { AppTheme.colors.task },
                     icon = { tint -> Icon(Icons.Filled.PictureAsPdf, contentDescription = null, tint = tint, modifier = Modifier.size(26.dp)) },
-                    onClick = { android.widget.Toast.makeText(context, "นำเข้า PDF มาในอัปเดตถัดไป", android.widget.Toast.LENGTH_SHORT).show() }
+                    onClick = { pickPdf.launch(arrayOf("application/pdf")) }
                 )
             )
         )
     }
 
     // ---------- หน้าต่าง ----------
+    pdfPending?.let { (uri, info) ->
+        val progress by viewModel.importProgress.collectAsState()
+        ImportPdfDialog(
+            info = info, folders = s.folders, initialFolder = folderId, progress = progress,
+            onImport = { title, folder ->
+                viewModel.importPdf(uri, title, folder, info) { id ->
+                    pdfPending = null
+                    if (id == null) android.widget.Toast.makeText(context, "นำเข้าไม่สำเร็จ", android.widget.Toast.LENGTH_SHORT).show()
+                    else onOpenPdf(id)
+                }
+            },
+            onDismiss = { if (progress == null) pdfPending = null }
+        )
+    }
     if (newFolder || editFolder != null) {
         FolderDialog(
             initial = editFolder,
@@ -482,4 +517,64 @@ private fun MoveRow(name: String, icon: androidx.compose.ui.graphics.vector.Imag
         Text(name, color = if (enabled) c.ink else c.line, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
         if (current) Text("อยู่ที่นี่", style = MaterialTheme.typography.labelSmall, color = c.muted)
     }
+}
+
+
+/** แผ่นนำเข้า PDF: ชื่อ + โฟลเดอร์ + ความคืบหน้าตอนคัดลอก */
+@Composable
+private fun ImportPdfDialog(
+    info: NoteRepository.PdfInfo,
+    folders: List<NoteFolderEntity>,
+    initialFolder: Long?,
+    progress: Float?,
+    onImport: (String, Long?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val c = AppTheme.colors
+    var name by remember { mutableStateOf(info.name.removeSuffix(".pdf").removeSuffix(".PDF")) }
+    var folder by remember { mutableStateOf(initialFolder) }
+    var picking by remember { mutableStateOf(false) }
+    val busy = progress != null
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = c.surface,
+        title = { Text("นำเข้า PDF") },
+        text = {
+            Column {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.ground).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(width = 40.dp, height = 46.dp).clip(RoundedCornerShape(8.dp)).background(Color(0xFF5A2A2A)), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.PictureAsPdf, contentDescription = null, tint = Color(0xFFFFB4A8))
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(info.name, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text("${info.pages} หน้า" + if (info.size > 0) " · %.1f MB".format(info.size / 1_000_000.0) else "", style = MaterialTheme.typography.labelSmall, color = c.muted)
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(value = name, onValueChange = { name = it.take(120) }, singleLine = true, enabled = !busy, label = { Text("ชื่อ") }, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                val f = folders.firstOrNull { it.folderId == folder }
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(enabled = !busy) { picking = true }.padding(vertical = 10.dp, horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(taskIconByKey(f?.icon) ?: if (f == null) Icons.Filled.Home else Icons.Filled.Folder, contentDescription = null, tint = folderAccent(f), modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("เก็บในโฟลเดอร์", style = MaterialTheme.typography.labelSmall, color = c.muted)
+                        Text(f?.name ?: "สมุด (ชั้นบนสุด)", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = c.muted)
+                }
+                if (progress != null) {
+                    LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().padding(top = 10.dp), color = c.task)
+                    Text("กำลังคัดลอก ${(progress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, color = c.muted, modifier = Modifier.padding(top = 4.dp))
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onImport(name.trim().ifBlank { info.name }, folder) }, enabled = !busy) { Text("นำเข้า") } },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("ยกเลิก") } }
+    )
+    if (picking) MoveDialog(folders = folders, current = folder, blocked = emptySet(), onPick = { folder = it; picking = false }, onDismiss = { picking = false })
 }
