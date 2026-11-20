@@ -22,6 +22,7 @@ class SmartSchedulerApp : Application(), Configuration.Provider {
         NotificationChannels.registerAll(this)
         scheduleDailyRefreshWorker()
         com.example.smartscheduler.update.UpdateCheckWorker.schedule(this)
+        com.example.smartscheduler.data.backup.BackupReminderWorker.schedule(this)
         // วิดเจ็ต "วันนี้": วาดใหม่เมื่อเปิดแอป และทุกครั้งที่กิจกรรมวันนี้เปลี่ยน
         com.example.smartscheduler.widget.Widgets.refreshAll(this)
         // ไอคอนแอปตามวันที่: สลับตอนออกจากแอป + เที่ยงคืน

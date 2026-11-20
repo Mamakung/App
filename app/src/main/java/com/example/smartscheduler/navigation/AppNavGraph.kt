@@ -17,6 +17,7 @@ import com.example.smartscheduler.update.rememberAppUpdateViewModel
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
@@ -54,6 +55,7 @@ object Routes {
     const val SETTINGS_APPEARANCE = "settings/appearance"
     const val SETTINGS_CATEGORIES = "settings/categories"
     const val SETTINGS_ALERTS = "settings/alerts"
+    const val SETTINGS_BACKUP = "settings/backup"
     const val NOTES = "notes"
     const val NOTES_FOLDER = "notes/folder/{id}"
     fun notesFolder(id: Long) = "notes/folder/$id"
@@ -73,8 +75,15 @@ private val tabs = listOf(
 )
 
 @Composable
-fun AppNavGraph(startDestination: String = Routes.AUTH, openUpdateOnStart: Boolean = false) {
+fun AppNavGraph(startDestination: String = Routes.AUTH, openUpdateOnStart: Boolean = false, openBackupOnStart: Boolean = false) {
     val navController: NavHostController = rememberNavController()
+    // แตะแจ้งเตือน "ถึงเวลาสำรองข้อมูล" → เปิดหน้าสำรอง
+    LaunchedEffect(openBackupOnStart) {
+        if (openBackupOnStart && startDestination != Routes.AUTH) {
+            kotlinx.coroutines.delay(300)
+            runCatching { navController.navigate(Routes.SETTINGS_BACKUP) }
+        }
+    }
     val updateViewModel = rememberAppUpdateViewModel()
     UpdateHost(updateViewModel, openedFromNotification = openUpdateOnStart)
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -209,7 +218,8 @@ fun AppNavGraph(startDestination: String = Routes.AUTH, openUpdateOnStart: Boole
                 SettingsScreen(
                     onOpenAppearance = { navController.navigate(Routes.SETTINGS_APPEARANCE) },
                     onOpenAlerts = { navController.navigate(Routes.SETTINGS_ALERTS) },
-                    onOpenCategories = { navController.navigate(Routes.SETTINGS_CATEGORIES) }
+                    onOpenCategories = { navController.navigate(Routes.SETTINGS_CATEGORIES) },
+                    onOpenBackup = { navController.navigate(Routes.SETTINGS_BACKUP) }
                 )
             }
             composable(Routes.SETTINGS_APPEARANCE) {
@@ -217,6 +227,9 @@ fun AppNavGraph(startDestination: String = Routes.AUTH, openUpdateOnStart: Boole
             }
             composable(Routes.SETTINGS_ALERTS) {
                 com.example.smartscheduler.ui.screens.settings.AlertsScreen(onBack = { navController.popBackStack() })
+            }
+            composable(Routes.SETTINGS_BACKUP) {
+                com.example.smartscheduler.ui.screens.settings.BackupScreen(onBack = { navController.popBackStack() })
             }
             composable(Routes.SETTINGS_CATEGORIES) {
                 com.example.smartscheduler.ui.screens.settings.CategoriesScreen(onBack = { navController.popBackStack() })

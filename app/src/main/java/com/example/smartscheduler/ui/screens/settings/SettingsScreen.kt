@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.ChevronRight
@@ -99,6 +100,7 @@ fun SettingsScreen(
     onOpenAppearance: () -> Unit,
     onOpenAlerts: () -> Unit,
     onOpenCategories: () -> Unit,
+    onOpenBackup: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val c = AppTheme.colors
@@ -143,6 +145,13 @@ fun SettingsScreen(
                     subtitle = if (categories.isEmpty()) "ยังไม่มีหมวดที่สร้างเอง"
                     else "${categories.size} หมวด · " + categories.take(3).joinToString(" ") { it.name },
                     onClick = onOpenCategories
+                )
+                HorizontalDivider(color = c.line)
+                SettingsRow(
+                    icon = Icons.Filled.Backup,
+                    title = "สำรองและกู้คืน",
+                    subtitle = "เก็บทุกอย่างเป็นไฟล์ ใช้ย้ายเครื่องหรือกันข้อมูลหาย",
+                    onClick = onOpenBackup
                 )
             }
         }

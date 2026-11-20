@@ -36,10 +36,11 @@ class MainActivity : ComponentActivity() {
 
         val openUpdate = intent?.getBooleanExtra(EXTRA_OPEN_UPDATE, false) == true
         readOpenDate(intent)
+        val openBackup = intent?.getBooleanExtra(EXTRA_OPEN_BACKUP, false) == true
 
         setContent {
             SmartSchedulerTheme {
-                AppNavGraph(startDestination = startDestination, openUpdateOnStart = openUpdate)
+                AppNavGraph(startDestination = startDestination, openUpdateOnStart = openUpdate, openBackupOnStart = openBackup)
             }
         }
     }
@@ -60,6 +61,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_OPEN_DATE = "open_date"
+        const val EXTRA_OPEN_BACKUP = "open_backup"
         const val EXTRA_OPEN_UPDATE = "open_update"
     }
 }

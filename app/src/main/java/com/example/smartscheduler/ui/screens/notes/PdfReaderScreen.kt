@@ -75,6 +75,9 @@ import kotlin.math.sqrt
 /** โหมดอ่าน: ปกติ / ถนอมสายตา (โทนอุ่น) / กลางคืน (กลับสี พื้นดำ ตัวหนังสือสว่าง) */
 enum class ReadingTheme(val label: String) { NORMAL("ปกติ"), SEPIA("ถนอมสายตา"), NIGHT("กลางคืน") }
 
+/** ทิศการอ่าน: เลื่อนขึ้นลง / พลิกซ้ายขวาทีละหน้า */
+enum class ReadDirection(val label: String) { VERTICAL("เลื่อนขึ้นลง"), HORIZONTAL("พลิกซ้ายขวา (ทีละหน้า)") }
+
 @HiltViewModel
 class PdfReaderViewModel @Inject constructor(
     private val repo: NoteRepository,
@@ -93,6 +96,9 @@ class PdfReaderViewModel @Inject constructor(
     val error: StateFlow<Boolean> = _error.asStateFlow()
     private val _theme = MutableStateFlow(runCatching { ReadingTheme.valueOf(prefs.getString("theme", null) ?: "") }.getOrDefault(ReadingTheme.NORMAL))
     val theme: StateFlow<ReadingTheme> = _theme.asStateFlow()
+    private val _direction = MutableStateFlow(runCatching { ReadDirection.valueOf(prefs.getString("direction", null) ?: "") }.getOrDefault(ReadDirection.VERTICAL))
+    val direction: StateFlow<ReadDirection> = _direction.asStateFlow()
+    fun setDirection(d: ReadDirection) { _direction.value = d; prefs.edit().putString("direction", d.name).apply() }
 
     private var fd: ParcelFileDescriptor? = null
     private var renderer: PdfRenderer? = null
@@ -186,6 +192,7 @@ private fun themeBackground(t: ReadingTheme) = when (t) {
     ReadingTheme.NIGHT -> Color(0xFF0B0E0D)
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun PdfReaderScreen(onBack: () -> Unit, viewModel: PdfReaderViewModel = hiltViewModel()) {
     val c = AppTheme.colors
@@ -193,6 +200,9 @@ fun PdfReaderScreen(onBack: () -> Unit, viewModel: PdfReaderViewModel = hiltView
     val ratios by viewModel.ratios.collectAsState()
     val error by viewModel.error.collectAsState()
     val theme by viewModel.theme.collectAsState()
+    val direction by viewModel.direction.collectAsState()
+    val horizontal = direction == ReadDirection.HORIZONTAL
+    var dirMenu by remember { mutableStateOf(false) }
     val list = rememberLazyListState()
     val thumbs = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -204,6 +214,15 @@ fun PdfReaderScreen(onBack: () -> Unit, viewModel: PdfReaderViewModel = hiltView
     var offsetX by remember { mutableFloatStateOf(0f) }
     var boxWidth by remember { mutableIntStateOf(0) }
     val pages = ratios?.size ?: 0
+    val pager = androidx.compose.foundation.pager.rememberPagerState { pages }
+    fun jump(i: Int, animate: Boolean = false) {
+        if (pages == 0) return
+        val p = i.coerceIn(0, pages - 1)
+        scope.launch {
+            if (horizontal) { if (animate) pager.animateScrollToPage(p) else pager.scrollToPage(p) }
+            else list.scrollToItem(p)
+        }
+    }
 
     BackHandler { onBack() }
 
@@ -233,12 +252,12 @@ fun PdfReaderScreen(onBack: () -> Unit, viewModel: PdfReaderViewModel = hiltView
         if (!restored && pages > 0) {
             restored = true
             val last = n.lastPage.coerceIn(0, pages - 1)
-            if (last > 0) { list.scrollToItem(last); resume = last; delay(4500); resume = null }
+            if (last > 0) { jump(last); resume = last; delay(4500); resume = null }
         }
     }
 
-    // หน้าปัจจุบัน = หน้าที่กินพื้นที่จอมากสุด
-    val current by remember {
+    // หน้าปัจจุบัน = หน้าที่กินพื้นที่จอมากสุด (โหมดพลิก = หน้าที่แสดงอยู่)
+    val listCurrent by remember {
         derivedStateOf {
             val info = list.layoutInfo
             info.visibleItemsInfo.maxByOrNull { item ->
@@ -248,7 +267,10 @@ fun PdfReaderScreen(onBack: () -> Unit, viewModel: PdfReaderViewModel = hiltView
             }?.index ?: list.firstVisibleItemIndex
         }
     }
+    val current = if (horizontal) pager.currentPage else listCurrent
     LaunchedEffect(current, restored) { if (restored) viewModel.pageChanged(current) }
+    // เปลี่ยนทิศการอ่าน: อยู่หน้าเดิม
+    LaunchedEffect(direction) { if (restored) note?.let { jump(it.lastPage) } }
     LaunchedEffect(current) { if (pages > 0) runCatching { thumbs.animateScrollToItem((current - 3).coerceAtLeast(0)) } }
 
     val filter = remember(theme) { themeFilter(theme) }
@@ -307,7 +329,21 @@ fun PdfReaderScreen(onBack: () -> Unit, viewModel: PdfReaderViewModel = hiltView
                         transformOrigin = TransformOrigin(0.5f, 0f)
                     )
             ) {
-                LazyColumn(
+                if (horizontal) {
+                    androidx.compose.foundation.pager.HorizontalPager(
+                        state = pager,
+                        modifier = Modifier.fillMaxSize(),
+                        userScrollEnabled = scale <= 1.01f,
+                        beyondBoundsPageCount = 1
+                    ) { i ->
+                        val ratio = ratios!![i]
+                        Box(Modifier.fillMaxSize().padding(top = 72.dp, bottom = 120.dp, start = 10.dp, end = 10.dp), contentAlignment = Alignment.Center) {
+                            Box(Modifier.aspectRatio(1f / ratio.coerceAtLeast(0.05f), matchHeightConstraintsFirst = true)) {
+                                PageImage(viewModel, i, ratio, (boxWidth * quality).toInt(), filter)
+                            }
+                        }
+                    }
+                } else LazyColumn(
                     state = list,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(top = 72.dp, bottom = 120.dp, start = 8.dp, end = 8.dp),
@@ -318,6 +354,12 @@ fun PdfReaderScreen(onBack: () -> Unit, viewModel: PdfReaderViewModel = hiltView
                     }
                 }
             }
+        }
+
+        // โหมดพลิก: ลูกศรขอบจอ
+        if (horizontal && bars && pages > 0 && scale <= 1.01f) {
+            if (current > 0) EdgeArrow(Icons.Filled.ChevronLeft, "หน้าก่อน", Modifier.align(Alignment.CenterStart)) { jump(current - 1, animate = true) }
+            if (current < pages - 1) EdgeArrow(Icons.Filled.ChevronRight, "หน้าถัดไป", Modifier.align(Alignment.CenterEnd)) { jump(current + 1, animate = true) }
         }
 
         // ป้ายซูม
@@ -337,6 +379,21 @@ fun PdfReaderScreen(onBack: () -> Unit, viewModel: PdfReaderViewModel = hiltView
                     "${current + 1} / $pages", style = MaterialTheme.typography.labelLarge, color = c.muted,
                     modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { goTo = true }.padding(horizontal = 8.dp, vertical = 6.dp)
                 )
+                Box {
+                    IconButton(onClick = { dirMenu = true }) {
+                        Icon(if (horizontal) Icons.Filled.SwapHoriz else Icons.Filled.SwapVert, contentDescription = "ทิศการอ่าน: ${direction.label}")
+                    }
+                    DropdownMenu(expanded = dirMenu, onDismissRequest = { dirMenu = false }) {
+                        ReadDirection.values().forEach { d ->
+                            DropdownMenuItem(
+                                text = { Text(d.label) },
+                                leadingIcon = { Icon(if (d == ReadDirection.HORIZONTAL) Icons.Filled.SwapHoriz else Icons.Filled.SwapVert, null) },
+                                trailingIcon = { if (direction == d) Icon(Icons.Filled.Check, null) },
+                                onClick = { viewModel.setDirection(d); dirMenu = false }
+                            )
+                        }
+                    }
+                }
                 Box {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Filled.Contrast, contentDescription = "โหมดอ่าน") }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -363,7 +420,7 @@ fun PdfReaderScreen(onBack: () -> Unit, viewModel: PdfReaderViewModel = hiltView
                 Icon(Icons.Filled.History, contentDescription = null, tint = c.muted, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("อ่านต่อจากหน้า ${(resume ?: 0) + 1}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                TextButton(onClick = { resume = null; scope.launch { list.scrollToItem(0) } }) { Text("เริ่มหน้าแรก") }
+                TextButton(onClick = { resume = null; jump(0) }) { Text("เริ่มหน้าแรก") }
             }
         }
 
@@ -379,7 +436,7 @@ fun PdfReaderScreen(onBack: () -> Unit, viewModel: PdfReaderViewModel = hiltView
                                 .height((34 * ratio).coerceIn(30f, 60f).dp)
                                 .clip(RoundedCornerShape(3.dp))
                                 .then(if (selected) Modifier.border(2.dp, c.now, RoundedCornerShape(3.dp)) else Modifier)
-                                .clickable { scope.launch { list.scrollToItem(i) } }
+                                .clickable { jump(i) }
                                 .semantics { contentDescription = "ไปหน้า ${i + 1}" }
                         ) { PageImage(viewModel, i, ratio, 110, filter, thumb = true) }
                     }
@@ -387,13 +444,13 @@ fun PdfReaderScreen(onBack: () -> Unit, viewModel: PdfReaderViewModel = hiltView
                 var drag by remember { mutableStateOf<Float?>(null) }
                 Slider(
                     value = drag ?: current.toFloat(),
-                    onValueChange = { drag = it; scope.launch { list.scrollToItem(it.toInt()) } },
+                    onValueChange = { drag = it; jump(it.toInt()) },
                     onValueChangeFinished = { drag = null },
                     valueRange = 0f..(pages - 1).coerceAtLeast(1).toFloat(),
                     modifier = Modifier.padding(horizontal = 12.dp).height(32.dp)
                 )
                 Text(
-                    "แตะกลางจอซ่อน/แสดงแถบ · บีบนิ้วซูม · แตะหน้าเล็กเพื่อกระโดด",
+                    if (horizontal) "ปัดหรือแตะลูกศรเพื่อพลิก · บีบนิ้วซูม · แตะกลางจอซ่อนแถบ" else "แตะกลางจอซ่อน/แสดงแถบ · บีบนิ้วซูม · แตะหน้าเล็กเพื่อกระโดด",
                     style = MaterialTheme.typography.labelSmall, color = c.muted, modifier = Modifier.padding(horizontal = 16.dp)
                 )
             }
@@ -416,13 +473,23 @@ fun PdfReaderScreen(onBack: () -> Unit, viewModel: PdfReaderViewModel = hiltView
             confirmButton = {
                 TextButton(onClick = {
                     val p = (text.toIntOrNull() ?: 1).coerceIn(1, pages) - 1
-                    scope.launch { list.scrollToItem(p) }
+                    jump(p)
                     goTo = false
                 }) { Text("ไป") }
             },
             dismissButton = { TextButton(onClick = { goTo = false }) { Text("ยกเลิก") } }
         )
     }
+}
+
+@Composable
+private fun EdgeArrow(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, modifier: Modifier, onClick: () -> Unit) {
+    Box(
+        modifier.padding(6.dp).size(40.dp).clip(androidx.compose.foundation.shape.CircleShape)
+            .background(AppTheme.colors.ground.copy(alpha = 0.7f)).clickable(onClick = onClick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center
+    ) { Icon(icon, contentDescription = null, tint = AppTheme.colors.ink) }
 }
 
 @Composable
