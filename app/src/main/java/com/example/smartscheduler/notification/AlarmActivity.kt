@@ -3,6 +3,7 @@ package com.example.smartscheduler.notification
 import android.app.KeyguardManager
 import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -61,6 +62,8 @@ class AlarmActivity : ComponentActivity() {
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val info = AlarmInfo.from(intent)
+        // เปิดมาจากเวลาปลุกโดยตรง (ไม่ใช่จากแจ้งเตือนของเซอร์วิส) → เริ่มเสียง
+        if (savedInstanceState == null && intent.hasExtra(AlarmInfo.EXTRA_ID)) AlarmService.startFrom(this, intent)
         val snooze = AppSettings.prefs(this).getInt(AppSettings.KEY_SNOOZE, 5)
         setContent {
             SmartSchedulerTheme {
@@ -78,6 +81,16 @@ class AlarmActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    /** ปุ่มเพิ่ม/ลดเสียง = หยุดปลุก */
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            AlarmService.send(this, AlarmService.ACTION_STOP)
+            finish()
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
     }
 }
 
@@ -158,7 +171,8 @@ private fun AlarmScreen(info: AlarmInfo, snoozeMinutes: Int, onSnooze: () -> Uni
             ) {
                 Text("หยุด", color = c.ground, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
             }
-            Spacer(Modifier.height(44.dp))
+            Text("กดปุ่มเพิ่ม/ลดเสียงเพื่อหยุดได้", color = c.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 10.dp))
+            Spacer(Modifier.height(34.dp))
         }
     }
 }

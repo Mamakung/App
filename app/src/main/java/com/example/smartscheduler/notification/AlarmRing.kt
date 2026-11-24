@@ -9,6 +9,9 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.media.VolumeProvider
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -106,27 +109,43 @@ class AlarmService : Service() {
     private var player: MediaPlayer? = null
     private var vibrator: Vibrator? = null
     private var info: AlarmInfo? = null
+    private var currentId = 0
+    private var session: MediaSession? = null
     private val handler = Handler(Looper.getMainLooper())
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> start(AlarmInfo.from(intent))
+            ACTION_START -> {
+                val id = intent.getIntExtra(AlarmInfo.EXTRA_ID, 0)
+                val recentlyStopped = id != 0 && id == lastStoppedId && System.currentTimeMillis() - lastStoppedAt < 90_000
+                when {
+                    // หน้าปลุกกับตัวสำรองมาพร้อมกัน → เล่นครั้งเดียว (ต้อง startForeground ทุกครั้งที่ถูกเรียกแบบ foreground)
+                    info != null -> keepForeground(info!!)
+                    recentlyStopped -> { keepForeground(AlarmInfo.from(intent)); stopAll() }
+                    else -> { currentId = id; start(AlarmInfo.from(intent)) }
+                }
+            }
             ACTION_SNOOZE -> { snooze(); stopAll() }
             ACTION_STOP -> stopAll()
         }
         return START_NOT_STICKY
     }
 
-    private fun start(i: AlarmInfo) {
-        info = i
+    private fun keepForeground(i: AlarmInfo) {
         NotificationChannels.registerAll(this)
         val notif = buildNotification(i)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIF_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
         } else startForeground(NOTIF_ID, notif)
+    }
+
+    private fun start(i: AlarmInfo) {
+        info = i
+        keepForeground(i)
         AlarmState.set(true)
+        startVolumeKeys()
         play(i.sound)
         if (AppSettings.prefs(this).getBoolean(AppSettings.KEY_VIBRATE, true)) vibrate()
         handler.postDelayed({ stopAll() }, 10 * 60 * 1000L)
@@ -169,7 +188,34 @@ class AlarmService : Service() {
         )
     }
 
+    /**
+     * ปุ่มเพิ่ม/ลดเสียง = หยุดปลุก แม้จอล็อกอยู่:
+     * MediaSession แบบ "ปรับเสียงเอง" (VolumeProvider) ขณะกำลังเล่น ระบบส่งการกดปุ่มเสียงมาที่นี่
+     */
+    private fun startVolumeKeys() {
+        runCatching {
+            session?.release()
+            session = MediaSession(this, "alarm").apply {
+                setPlaybackState(
+                    PlaybackState.Builder().setState(PlaybackState.STATE_PLAYING, 0, 1f).setActions(PlaybackState.ACTION_STOP).build()
+                )
+                setPlaybackToRemote(object : VolumeProvider(VolumeProvider.VOLUME_CONTROL_RELATIVE, 10, 5) {
+                    override fun onAdjustVolume(direction: Int) { if (direction != 0) handler.post { stopAll() } }
+                })
+                setCallback(object : MediaSession.Callback() {
+                    override fun onStop() { handler.post { stopAll() } }
+                    override fun onPause() { handler.post { stopAll() } }
+                })
+                isActive = true
+            }
+        }
+    }
+
     private fun stopAll() {
+        if (currentId != 0) { lastStoppedId = currentId; lastStoppedAt = System.currentTimeMillis() }
+        currentId = 0
+        info = null
+        runCatching { session?.isActive = false; session?.release() }; session = null
         handler.removeCallbacksAndMessages(null)
         runCatching { player?.stop() }; player?.release(); player = null
         vibrator?.cancel(); vibrator = null
@@ -181,6 +227,7 @@ class AlarmService : Service() {
 
     override fun onDestroy() {
         player?.release(); vibrator?.cancel(); AlarmState.set(false)
+        runCatching { session?.release() }; session = null
         super.onDestroy()
     }
 
@@ -215,6 +262,14 @@ class AlarmService : Service() {
         const val ACTION_SNOOZE = "alarm.SNOOZE"
         private const val NOTIF_ID = 777_001
         private const val SNOOZE_CODE = 777_002
+        @Volatile private var lastStoppedId = 0
+        @Volatile private var lastStoppedAt = 0L
+
+        /** หน้าปลุกถูกระบบเปิดเอง → เริ่มเสียงจากหน้าปลุก */
+        fun startFrom(context: Context, screenIntent: Intent) {
+            val svc = Intent(context, AlarmService::class.java).apply { action = ACTION_START; putExtras(screenIntent) }
+            runCatching { ContextCompat.startForegroundService(context, svc) }
+        }
 
         fun send(context: Context, action: String) {
             context.startService(Intent(context, AlarmService::class.java).setAction(action))

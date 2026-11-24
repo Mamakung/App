@@ -714,6 +714,20 @@ fun TaskEditorDialog(
                         )
                         TextButton(onClick = { pickSound = true }) { Text("เปลี่ยน") }
                     }
+                    if (!com.example.smartscheduler.notification.rememberFullScreenAllowed()) {
+                        Row(
+                            Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.error.copy(alpha = 0.10f))
+                                .padding(start = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "ยังไม่อนุญาตแสดงเต็มหน้าจอ หน้าปลุกอาจไม่เด้งตอนล็อกจอ",
+                                Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error
+                            )
+                            TextButton(onClick = { com.example.smartscheduler.notification.AlarmPermissions.openFullScreenSettings(context) }) { Text("อนุญาต") }
+                        }
+                    }
                     if (pickSound) {
                         SoundPickerDialog(
                             alarm = true, selected = draft.alarmSound, allowDefault = true,

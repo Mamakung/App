@@ -388,10 +388,10 @@ fun AlertsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMode
                     SettingsRow(
                         Icons.Filled.Fullscreen,
                         "แสดงเต็มหน้าจอ",
-                        if (fullScreenOk) "อนุญาตแล้ว · ปลุกได้แม้ล็อกจออยู่" else "ยังไม่อนุญาต · แตะเพื่อเปิด (ไม่งั้นปลุกจะเป็นแค่แจ้งเตือน)"
+                        if (fullScreenOk) "อนุญาตแล้ว · ปลุกได้แม้ล็อกจออยู่" else "ยังไม่อนุญาต · แตะเพื่อเปิด (ไม่งั้นหน้าปลุกอาจไม่เด้งตอนล็อกจอ)"
                     ) { openFullScreenSettings(context) }
                 }
-                Hint("ตั้งว่าจะเตือนหรือปลุกได้ที่แต่ละกิจกรรม (แตะกิจกรรม › เตือน)", Modifier.padding(top = 10.dp))
+                Hint("ตั้งว่าจะเตือนหรือปลุกได้ที่แต่ละกิจกรรม (แตะกิจกรรม › เตือน) · กดปุ่มเพิ่ม/ลดเสียงเพื่อหยุดปลุกได้", Modifier.padding(top = 10.dp))
             }
         }
     }
@@ -430,21 +430,11 @@ private fun SwitchRow(icon: ImageVector, title: String, subtitle: String?, check
     }
 }
 
-private fun canFullScreen(context: android.content.Context): Boolean =
-    if (android.os.Build.VERSION.SDK_INT >= 34) {
-        context.getSystemService(android.app.NotificationManager::class.java).canUseFullScreenIntent()
-    } else true
+private fun canFullScreen(context: android.content.Context) =
+    com.example.smartscheduler.notification.AlarmPermissions.canFullScreen(context)
 
-private fun openFullScreenSettings(context: android.content.Context) {
-    val intent = if (android.os.Build.VERSION.SDK_INT >= 34) {
-        android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT)
-            .setData(android.net.Uri.parse("package:${context.packageName}"))
-    } else {
-        android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
-    }
-    runCatching { context.startActivity(intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
-}
+private fun openFullScreenSettings(context: android.content.Context) =
+    com.example.smartscheduler.notification.AlarmPermissions.openFullScreenSettings(context)
 
 // ============================================================================
 // หมวดหมู่กิจกรรม

@@ -111,19 +111,29 @@ class AlarmScheduler @Inject constructor(
         scheduleAlarmAtMillis(requestCode, triggerAtMillis, info)
     }
 
+    /**
+     * ถึงเวลา: ระบบเปิดหน้าปลุกเต็มจอเองโดยตรง (setAlarmClock + activity — ได้สิทธิ์เปิดหน้าจอจากเบื้องหลังแบบนาฬิกาปลุกจริง)
+     * + ตัวสำรองเวลาเดียวกันที่เริ่มเสียงปลุกผ่าน receiver เผื่อหน้าปลุกถูกบล็อก (เซอร์วิสกันเล่นซ้ำเอง)
+     */
     fun scheduleAlarmAtMillis(requestCode: Int, triggerAtMillis: Long, info: AlarmInfo) {
-        val intent = Intent(context, AlarmReceiver::class.java).apply { info.putInto(this); putExtra(AlarmInfo.EXTRA_ID, requestCode) }
-        val pi = PendingIntent.getBroadcast(context, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val ring = Intent(context, AlarmReceiver::class.java).apply { info.putInto(this); putExtra(AlarmInfo.EXTRA_ID, requestCode) }
+        val ringPi = PendingIntent.getBroadcast(context, requestCode, ring, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        if (!canScheduleExactAlarms()) {
+            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, ringPi)
+            return
+        }
+        val screen = Intent(context, AlarmActivity::class.java).apply {
+            info.putInto(this); putExtra(AlarmInfo.EXTRA_ID, requestCode)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_USER_ACTION)
+        }
+        val screenPi = PendingIntent.getActivity(context, requestCode, screen, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val show = PendingIntent.getActivity(
             context, requestCode,
             Intent(context, com.example.smartscheduler.MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        if (canScheduleExactAlarms()) {
-            alarmManager.setAlarmClock(AlarmManager.AlarmClockInfo(triggerAtMillis, show), pi)
-        } else {
-            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pi)
-        }
+        alarmManager.setAlarmClock(AlarmManager.AlarmClockInfo(triggerAtMillis, show), screenPi)
+        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, ringPi)
     }
 
     fun cancelForDay(dayId: Long, previousTaskCount: Int) {
@@ -140,6 +150,11 @@ class AlarmScheduler @Inject constructor(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         alarmManager.cancel(pi)
+        val screen = PendingIntent.getActivity(
+            context, requestCode, Intent(context, AlarmActivity::class.java),
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+        )
+        screen?.let { alarmManager.cancel(it) }
     }
 
     private fun cancel(requestCode: Int) {
