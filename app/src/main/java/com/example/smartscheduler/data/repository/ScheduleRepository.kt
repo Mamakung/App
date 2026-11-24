@@ -12,6 +12,7 @@ import com.example.smartscheduler.domain.model.Recurrence
 import com.example.smartscheduler.domain.model.TaskKind
 import com.example.smartscheduler.notification.AlarmScheduler
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.time.LocalDate
 import java.util.UUID
@@ -377,6 +378,19 @@ class ScheduleRepository @Inject constructor(
         )
         rescheduleDay(task.dayId)
     }
+
+    /** กิจกรรมทั้งหมดในวันที่ให้มา (สร้างวันจากกิจวัตรก่อนถ้ายังไม่มี) */
+    suspend fun tasksOnDates(uid: String, dates: Collection<LocalDate>): List<Pair<LocalDate, ScheduleTaskEntity>> {
+        if (dates.isEmpty()) return emptyList()
+        dates.forEach { ensureDayGenerated(uid, it) }
+        val want = dates.map { it.toEpochDay() }.toSet()
+        val days = scheduleDao.observeRange(uid, want.min(), want.max()).first()
+        return days.filter { it.day.dateEpochDay in want }
+            .flatMap { d -> d.tasks.map { LocalDate.ofEpochDay(d.day.dateEpochDay) to it } }
+    }
+
+    /** ลบหลายรายการ เฉพาะวันนั้นๆ (กิจวัตร/ตารางเรียนวันอื่นยังอยู่) */
+    suspend fun deleteTasksOnly(tasks: List<ScheduleTaskEntity>) = tasks.forEach { deleteSingleDayTask(it) }
 
     suspend fun deleteSingleDayTask(task: ScheduleTaskEntity) {
         scheduleDao.deleteTask(task)

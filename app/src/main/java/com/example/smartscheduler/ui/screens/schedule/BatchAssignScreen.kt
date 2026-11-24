@@ -158,6 +158,22 @@ class BatchAssignViewModel @Inject constructor(
 
     fun clearExplicit() = _state.update { it.copy(explicitDates = emptyList()) }
 
+    /** ลบหลายวัน: โหลดกิจกรรมของวันที่เลือก (null = กำลังโหลด) */
+    private val _deleteItems = MutableStateFlow<List<Pair<LocalDate, com.example.smartscheduler.data.local.entity.ScheduleTaskEntity>>?>(null)
+    val deleteItems: StateFlow<List<Pair<LocalDate, com.example.smartscheduler.data.local.entity.ScheduleTaskEntity>>?> = _deleteItems.asStateFlow()
+
+    fun loadDeleteItems(dates: List<LocalDate>) {
+        _deleteItems.value = null
+        viewModelScope.launch { _deleteItems.value = repo.tasksOnDates(auth.uid, dates) }
+    }
+
+    fun deleteTasks(tasks: List<com.example.smartscheduler.data.local.entity.ScheduleTaskEntity>) {
+        viewModelScope.launch {
+            repo.deleteTasksOnly(tasks)
+            _state.update { it.copy(message = "ลบแล้ว ${tasks.size} รายการ") }
+        }
+    }
+
     /** ล้างการแตะเอาออก/ใส่เพิ่ม กลับไปตามรูปแบบ */
     fun resetDayEdits() = _state.update { it.copy(excluded = emptySet(), added = emptySet()) }
 
@@ -216,10 +232,21 @@ fun BatchAssignScreen(onBack: () -> Unit, viewModel: BatchAssignViewModel = hilt
     val snackbar = remember { SnackbarHostState() }
     var editing by remember { mutableStateOf<BatchEdit?>(null) }
     var showAddDate by remember { mutableStateOf(false) }
+    var showDelete by remember { mutableStateOf(false) }
+    val deleteItems by viewModel.deleteItems.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
     val quick = remember { com.example.smartscheduler.settings.QuickStore(context) }
     val dates = remember(state) { state.resolvedDates() }
     val c = AppTheme.colors
+
+    if (showDelete) {
+        BulkDeleteDialog(
+            items = deleteItems,
+            dayCount = dates.size,
+            onDelete = { viewModel.deleteTasks(it); showDelete = false },
+            onDismiss = { showDelete = false }
+        )
+    }
 
     LaunchedEffect(state.message) {
         state.message?.let { snackbar.showSnackbar(it); viewModel.consumeMessage() }
@@ -340,6 +367,18 @@ fun BatchAssignScreen(onBack: () -> Unit, viewModel: BatchAssignViewModel = hilt
                         )
                         if (state.mode == BatchMode.PATTERN && (removed > 0 || extra > 0)) {
                             TextButton(onClick = viewModel::resetDayEdits) { Text("คืนค่า") }
+                        }
+                    }
+                    if (dates.isNotEmpty()) {
+                        OutlinedButton(
+                            onClick = { viewModel.loadDeleteItems(dates); showDelete = true },
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("ลบกิจกรรมใน ${dates.size} วันที่เลือก")
                         }
                     }
                 }

@@ -224,6 +224,20 @@ class DashboardViewModel @Inject constructor(
     }
 
     /** เพิ่มกิจกรรมเดียวให้ทุกวันตั้งแต่ [from] ถึง [to] (จากการลากเลือกในปฏิทิน) */
+    /** ลบหลายวัน: โหลดกิจกรรมในช่วงวันที่ */
+    private val _rangeTasks = MutableStateFlow<List<Pair<LocalDate, com.example.smartscheduler.data.local.entity.ScheduleTaskEntity>>?>(null)
+    val rangeTasks: StateFlow<List<Pair<LocalDate, com.example.smartscheduler.data.local.entity.ScheduleTaskEntity>>?> = _rangeTasks
+    fun loadRangeTasks(from: LocalDate, to: LocalDate) {
+        _rangeTasks.value = null
+        viewModelScope.launch {
+            val dates = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(to) }.toList()
+            _rangeTasks.value = repo.tasksOnDates(uid, dates)
+        }
+    }
+    fun deleteTasksOnly(tasks: List<com.example.smartscheduler.data.local.entity.ScheduleTaskEntity>) {
+        viewModelScope.launch { repo.deleteTasksOnly(tasks) }
+    }
+
     fun addToRange(from: LocalDate, to: LocalDate, draft: TaskDraft) {
         viewModelScope.launch { repo.addTaskToRange(uid, from, to, draft.toScheduleTask(null, 0)) }
     }
@@ -301,6 +315,8 @@ fun DashboardScreen(
     var confirmAll by remember { mutableStateOf<DashEdit?>(null) }
     // ลากเลือกหลายวันในปฏิทินแล้วปล่อย: เพิ่มกิจกรรมเดียวให้ทุกวันในช่วง
     var rangeEdit by remember { mutableStateOf<Pair<LocalDate, LocalDate>?>(null) }
+    var rangeChoice by remember { mutableStateOf<Pair<LocalDate, LocalDate>?>(null) }
+    var rangeDelete by remember { mutableStateOf<Pair<LocalDate, LocalDate>?>(null) }
     // รายวัน: ปัดครั้งแรกขึ้นป้าย 2 วินาที ปัดซ้ำทางเดิมในช่วงนั้นถึงเปลี่ยนวัน
     var swipeHint by remember { mutableStateOf(0) }
     var swipeHintKey by remember { mutableStateOf(0) }
@@ -354,7 +370,7 @@ fun DashboardScreen(
                         days = state.range,
                         onTap = viewModel::openDay,
                         onAddDay = { d -> viewModel.select(d); editing = DashEdit(null, d) },
-                        onAddRange = { a, b -> rangeEdit = a to b },
+                        onAddRange = { a, b -> rangeChoice = a to b },
                         onShiftMonth = viewModel::step
                     )
                     Spacer(Modifier.height(20.dp))
@@ -462,6 +478,30 @@ fun DashboardScreen(
             done = live?.let { it.status == "DONE" },
             onDoneChange = live?.let { t -> { _: Boolean -> viewModel.toggleDone(t) } },
             onDismiss = { editing = null }
+        )
+    }
+
+    rangeChoice?.let { (a, b) ->
+        val n = java.time.temporal.ChronoUnit.DAYS.between(a, b) + 1
+        RangeActionDialog(
+            days = n.toInt(),
+            rangeText = "${shortDay(a)} – ${shortDay(b)}",
+            onAdd = { rangeChoice = null; rangeEdit = a to b },
+            onDelete = { rangeChoice = null; viewModel.loadRangeTasks(a, b); rangeDelete = a to b },
+            onDismiss = { rangeChoice = null }
+        )
+    }
+    rangeDelete?.let { (a, b) ->
+        val n = java.time.temporal.ChronoUnit.DAYS.between(a, b) + 1
+        val items by viewModel.rangeTasks.collectAsState()
+        BulkDeleteDialog(
+            items = items, dayCount = n.toInt(),
+            onDelete = { tasks ->
+                viewModel.deleteTasksOnly(tasks)
+                Toast.makeText(context, "ลบแล้ว ${tasks.size} รายการ", Toast.LENGTH_SHORT).show()
+                rangeDelete = null
+            },
+            onDismiss = { rangeDelete = null }
         )
     }
 
