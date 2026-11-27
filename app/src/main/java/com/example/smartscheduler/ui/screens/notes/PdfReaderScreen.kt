@@ -210,8 +210,10 @@ fun PdfReaderScreen(onBack: () -> Unit, viewModel: PdfReaderViewModel = hiltView
     var menu by remember { mutableStateOf(false) }
     var goTo by remember { mutableStateOf(false) }
     var resume by remember { mutableStateOf<Int?>(null) }
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offsetX by remember { mutableFloatStateOf(0f) }
+    // ซูม: โหมดเลื่อน = ซูมทั้งรายการ (ลากเกินขอบบน/ล่างส่งต่อให้รายการเลื่อน), โหมดพลิก = ซูมทีละหน้า
+    val listZoom = remember { PdfZoomState { dy -> list.dispatchRawDelta(dy) } }
+    val pageZooms = remember { HashMap<Int, PdfZoomState>() }
+    fun pageZoom(i: Int) = pageZooms.getOrPut(i) { PdfZoomState() }
     var boxWidth by remember { mutableIntStateOf(0) }
     val pages = ratios?.size ?: 0
     val pager = androidx.compose.foundation.pager.rememberPagerState { pages }
@@ -274,8 +276,12 @@ fun PdfReaderScreen(onBack: () -> Unit, viewModel: PdfReaderViewModel = hiltView
     LaunchedEffect(current) { if (pages > 0) runCatching { thumbs.animateScrollToItem((current - 3).coerceAtLeast(0)) } }
 
     val filter = remember(theme) { themeFilter(theme) }
-    // ซูมแล้ววาดใหม่ให้คมขึ้น (แบ่งเป็นขั้น ไม่วาดใหม่ทุกครั้งที่ขยับนิ้ว)
-    val quality = when { scale > 2.6f -> 3f; scale > 1.6f -> 2f; else -> 1f }
+    val activeZoom = if (horizontal) pageZoom(current) else listZoom
+    val currentNow by rememberUpdatedState(current)
+    val scale = activeZoom.scale
+    LaunchedEffect(direction) { listZoom.reset(); pageZooms.values.forEach { it.reset() } }
+    // ซูมแล้ววาดใหม่ให้คมขึ้น (แบ่งเป็นขั้น วาดใหม่ตอนหยุดซูม ไม่วาดระหว่างขยับนิ้ว)
+    fun quality(s: Float) = when { s > 2.4f -> 3f; s > 1.4f -> 2f; else -> 1f }
 
     Box(Modifier.fillMaxSize().background(themeBackground(theme))) {
         when {
@@ -291,66 +297,46 @@ fun PdfReaderScreen(onBack: () -> Unit, viewModel: PdfReaderViewModel = hiltView
                 Modifier
                     .fillMaxSize()
                     .onSizeChanged { boxWidth = it.width }
-                    // บีบนิ้วซูม / ลากซ้ายขวาเมื่อซูมอยู่ (ลากขึ้นลง = เลื่อนหน้าตามปกติ)
-                    .pointerInput(Unit) {
-                        awaitEachGesture {
-                            awaitFirstDown(requireUnconsumed = false)
-                            do {
-                                val ev = awaitPointerEvent()
-                                val count = ev.changes.count { it.pressed }
-                                if (count >= 2) {
-                                    val z = ev.calculateZoom()
-                                    val pan = ev.calculatePan()
-                                    scale = (scale * z).coerceIn(1f, 4f)
-                                    val max = (scale - 1f) * size.width / 2f
-                                    offsetX = (offsetX + pan.x).coerceIn(-max, max)
-                                    ev.changes.forEach { it.consume() }
-                                } else if (count == 1 && scale > 1f) {
-                                    val ch = ev.changes.first { it.pressed }
-                                    val d = ch.positionChange()
-                                    if (abs(d.x) > abs(d.y)) {
-                                        val max = (scale - 1f) * size.width / 2f
-                                        offsetX = (offsetX + d.x).coerceIn(-max, max)
-                                        ch.consume()
-                                    }
-                                }
-                            } while (ev.changes.any { it.pressed })
-                            if (scale < 1.05f) { scale = 1f; offsetX = 0f }
-                        }
-                    }
-                    .pointerInput(Unit) {
+                    .pointerInput(horizontal) {
                         detectTapGestures(
                             onTap = { bars = !bars },
-                            onDoubleTap = { if (scale > 1f) { scale = 1f; offsetX = 0f } else scale = 2f }
+                            onDoubleTap = { p -> (if (horizontal) pageZoom(currentNow) else listZoom).toggleAt(p, scope) }
                         )
                     }
-                    .graphicsLayer(
-                        scaleX = scale, scaleY = scale, translationX = offsetX,
-                        transformOrigin = TransformOrigin(0.5f, 0f)
-                    )
+                    // โหมดเลื่อน: ซูมทั้งรายการ (ดักก่อนรายการด้วย Initial กันรายการเลื่อนตอนบีบนิ้ว)
+                    .then(if (!horizontal) Modifier.pdfZoomGestures(listZoom, scope, passEdges = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial).pdfZoomLayer(listZoom) else Modifier)
             ) {
                 if (horizontal) {
                     androidx.compose.foundation.pager.HorizontalPager(
                         state = pager,
                         modifier = Modifier.fillMaxSize(),
-                        userScrollEnabled = scale <= 1.01f,
                         beyondBoundsPageCount = 1
                     ) { i ->
                         val ratio = ratios!![i]
-                        Box(Modifier.fillMaxSize().padding(top = 72.dp, bottom = 120.dp, start = 10.dp, end = 10.dp), contentAlignment = Alignment.Center) {
-                            Box(Modifier.aspectRatio(1f / ratio.coerceAtLeast(0.05f), matchHeightConstraintsFirst = true)) {
-                                PageImage(viewModel, i, ratio, (boxWidth * quality).toInt(), filter)
+                        val z = pageZoom(i)
+                        // พลิกไปหน้าอื่นแล้ว หน้านี้กลับขนาดปกติ
+                        LaunchedEffect(pager.settledPage) { if (pager.settledPage != i) z.reset() }
+                        Box(
+                            Modifier.fillMaxSize()
+                                .pdfZoomGestures(z, scope, passEdges = true, pass = androidx.compose.ui.input.pointer.PointerEventPass.Main)
+                                .pdfZoomLayer(z)
+                        ) {
+                            Box(Modifier.fillMaxSize().padding(top = 72.dp, bottom = 120.dp, start = 10.dp, end = 10.dp), contentAlignment = Alignment.Center) {
+                                Box(Modifier.aspectRatio(1f / ratio.coerceAtLeast(0.05f), matchHeightConstraintsFirst = true)) {
+                                    PageImage(viewModel, i, ratio, (boxWidth * quality(z.settled)).toInt(), filter)
+                                }
                             }
                         }
                     }
                 } else LazyColumn(
                     state = list,
                     modifier = Modifier.fillMaxSize(),
+                    userScrollEnabled = !listZoom.zoomed,
                     contentPadding = PaddingValues(top = 72.dp, bottom = 120.dp, start = 8.dp, end = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     itemsIndexed(ratios!!) { i, ratio ->
-                        PageImage(viewModel, i, ratio, (boxWidth * quality).toInt(), filter)
+                        PageImage(viewModel, i, ratio, (boxWidth * quality(listZoom.settled)).toInt(), filter)
                     }
                 }
             }
