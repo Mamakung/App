@@ -2,5 +2,6 @@
 <!-- ไฟล์ APK ที่ดาวน์โหลดสำหรับอัปเดต (cacheDir/updates) + ไฟล์แนบของสมุด (filesDir/notes) -->
 <paths>
     <cache-path name="updates" path="updates/" />
+    <cache-path name="samples" path="samples/" />
     <files-path name="notes" path="notes/" />
 </paths>

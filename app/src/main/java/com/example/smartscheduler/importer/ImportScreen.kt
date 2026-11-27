@@ -531,6 +531,8 @@ private fun ImportedBatches(batches: List<ImportBatchSummary>, onRemove: (Import
 @Composable
 private fun PickStep(state: ImportUiState, onPick: () -> Unit) {
     val c = AppTheme.colors
+    var sample by remember { mutableStateOf<SampleTab?>(null) }
+    sample?.let { ImportSampleSheet(it) { sample = null } }
     Column {
         Text("ให้แอปจัดตารางจากไฟล์", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(6.dp))
@@ -551,6 +553,7 @@ private fun PickStep(state: ImportUiState, onPick: () -> Unit) {
                         if (state.hasApiKey) "AI อ่านตารางให้ ใช้อินเทอร์เน็ตและ API key ที่ใส่ไว้"
                         else "AI อ่านตารางให้ ต้องใส่ Claude API key ครั้งแรกที่ใช้ (มีค่าใช้จ่ายตามการใช้งาน)"
                     )
+                    SampleLink("ดูตัวอย่างรูปที่อ่านได้") { sample = SampleTab.IMAGE }
                 }
             }
             HorizontalDivider(color = c.line, modifier = Modifier.padding(vertical = 14.dp))
@@ -560,6 +563,7 @@ private fun PickStep(state: ImportUiState, onPick: () -> Unit) {
                 Column {
                     Text("ไฟล์ CSV", style = MaterialTheme.typography.titleSmall)
                     Hint("อ่านในเครื่อง ไม่ต้องใช้ AI คอลัมน์: วัน, เริ่ม, สิ้นสุด, วิชา, รหัสวิชา, ห้อง, ครู")
+                    SampleLink("ดูตัวอย่างไฟล์ CSV") { sample = SampleTab.CSV }
                 }
             }
         }
@@ -594,5 +598,15 @@ private fun ApiKeyDialog(initial: String, onSave: (String) -> Unit, onDismiss: (
         },
         confirmButton = { TextButton(enabled = key.isNotBlank(), onClick = { onSave(key) }) { Text("บันทึก") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("ยกเลิก") } }
+    )
+}
+
+@Composable
+private fun SampleLink(label: String, onClick: () -> Unit) {
+    Text(
+        "$label ›", style = MaterialTheme.typography.labelLarge, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+        color = AppTheme.colors.now,
+        modifier = Modifier.padding(top = 4.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick).padding(vertical = 8.dp, horizontal = 2.dp)
     )
 }
