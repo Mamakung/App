@@ -61,10 +61,26 @@ data class NotebookState(
 )
 
 private val thaiCollator: java.text.Collator = java.text.Collator.getInstance(java.util.Locale("th", "TH"))
+private val chunkRe = Regex("\\d+|\\D+")
+
+/** เรียงชื่อแบบคนอ่าน: ตัวเลขในชื่อเทียบเป็นค่าเลข (Volume_6 มาก่อน Volume_10) ตัวหนังสือเรียง ก–ฮ / A–Z */
+private fun naturalCompare(a: String, b: String): Int {
+    val x = chunkRe.findAll(a).map { it.value }.toList()
+    val y = chunkRe.findAll(b).map { it.value }.toList()
+    for (i in 0 until minOf(x.size, y.size)) {
+        val p = x[i]; val q = y[i]
+        val r = if (p[0].isDigit() && q[0].isDigit()) {
+            val pt = p.trimStart('0'); val qt = q.trimStart('0')
+            if (pt.length != qt.length) pt.length - qt.length else pt.compareTo(qt).takeIf { it != 0 } ?: (p.length - q.length)
+        } else thaiCollator.compare(p, q)
+        if (r != 0) return r
+    }
+    return x.size - y.size
+}
 
 /** เรียงบันทึก/PDF ตามที่เลือก */
 private fun List<NoteEntity>.sortedNotes(sort: NoteSort): List<NoteEntity> {
-    val byName = Comparator<NoteEntity> { a, b -> thaiCollator.compare(a.title.ifBlank { "\uFFFF" }, b.title.ifBlank { "\uFFFF" }) }
+    val byName = Comparator<NoteEntity> { a, b -> naturalCompare(a.title.ifBlank { "\uFFFF" }, b.title.ifBlank { "\uFFFF" }) }
     return when (sort) {
         NoteSort.UPDATED -> sortedByDescending { it.updatedAt }
         NoteSort.CREATED -> sortedByDescending { it.createdAt }
@@ -76,7 +92,7 @@ private fun List<NoteEntity>.sortedNotes(sort: NoteSort): List<NoteEntity> {
 
 /** เรียงโฟลเดอร์: แก้ไขล่าสุด = ตามบันทึกข้างในที่แก้ล่าสุด */
 private fun List<NoteFolderEntity>.sortedFolders(sort: NoteSort, notes: List<NoteEntity>): List<NoteFolderEntity> {
-    val byName = Comparator<NoteFolderEntity> { a, b -> thaiCollator.compare(a.name, b.name) }
+    val byName = Comparator<NoteFolderEntity> { a, b -> naturalCompare(a.name, b.name) }
     return when (sort) {
         NoteSort.UPDATED -> {
             val last = notes.groupBy { it.folderId }.mapValues { (_, l) -> l.maxOf { it.updatedAt } }
